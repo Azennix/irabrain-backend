@@ -63,6 +63,8 @@ app.add_middleware(
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://192.168.1.101:3000",
+        "https://irabrain.com",
+        "https://www.irabrain.com",
     ],
     allow_credentials=True,
     allow_methods=[
