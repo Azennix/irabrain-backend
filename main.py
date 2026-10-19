@@ -1,4 +1,4 @@
-import os
+﻿import os
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from contextlib import asynccontextmanager
 
@@ -44,6 +44,7 @@ if ENVIRONMENT == "production":
         allowed_hosts=[
             "irabrain.com",
             "www.irabrain.com",
+            "irabrain-backend-production.up.railway.app",
         ],
     )
 else:
