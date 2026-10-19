@@ -1,17 +1,12 @@
 import os
-import smtplib
-from email.message import EmailMessage
 
+import resend
 from dotenv import load_dotenv
 
 load_dotenv()
 
-
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USERNAME = os.getenv("SMTP_USERNAME")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
-EMAIL_FROM = os.getenv("EMAIL_FROM", SMTP_USERNAME)
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+EMAIL_FROM = os.getenv("EMAIL_FROM", "onboarding@resend.dev")
 
 
 def send_email(
@@ -19,35 +14,19 @@ def send_email(
     subject: str,
     body: str,
 ) -> None:
-
-    if not SMTP_USERNAME:
-        raise RuntimeError("SMTP_USERNAME is not configured.")
-
-    if not SMTP_PASSWORD:
-        raise RuntimeError("SMTP_PASSWORD is not configured.")
+    if not RESEND_API_KEY:
+        raise RuntimeError("RESEND_API_KEY is not configured.")
 
     if not EMAIL_FROM:
         raise RuntimeError("EMAIL_FROM is not configured.")
 
-    message = EmailMessage()
+    resend.api_key = RESEND_API_KEY
 
-    message["From"] = EMAIL_FROM
-    message["To"] = to_email
-    message["Subject"] = subject
-
-    message.set_content(body)
-
-    with smtplib.SMTP(
-        SMTP_HOST,
-        SMTP_PORT,
-        timeout=20,
-    ) as server:
-
-        server.starttls()
-
-        server.login(
-            SMTP_USERNAME,
-            SMTP_PASSWORD,
-        )
-
-        server.send_message(message)
+    resend.Emails.send(
+        {
+            "from": EMAIL_FROM,
+            "to": [to_email],
+            "subject": subject,
+            "text": body,
+        }
+    )
