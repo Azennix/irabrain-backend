@@ -44,7 +44,7 @@ if ENVIRONMENT == "production":
         allowed_hosts=[
             "irabrain.com",
             "www.irabrain.com",
-            "https://irabrain-app.netlify.app",
+            "irabrain-app.netlify.app",
             "irabrain-backend-production.up.railway.app",
         ],
     )
@@ -66,6 +66,7 @@ app.add_middleware(
         "http://192.168.1.101:3000",
         "https://irabrain.com",
         "https://www.irabrain.com",
+        "https://irabrain-app.netlify.app",
     ],
     allow_credentials=True,
     allow_methods=[
