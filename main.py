@@ -44,6 +44,7 @@ if ENVIRONMENT == "production":
         allowed_hosts=[
             "irabrain.com",
             "www.irabrain.com",
+            "https://irabrain-app.netlify.app",
             "irabrain-backend-production.up.railway.app",
         ],
     )
