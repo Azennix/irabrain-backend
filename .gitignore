@@ -1,0 +1,32 @@
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Python virtual environments
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Test and coverage artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local temporary files
+temp/
+tmp/
+
+# Local development workspaces
+.self_development_workspaces/
+.test_orchestrator_workspaces/
+.test_self_development_workspaces/
