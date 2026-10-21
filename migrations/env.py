@@ -1,4 +1,4 @@
-from logging.config import fileConfig
+﻿from logging.config import fileConfig
 import os
 from sqlalchemy import text
 
@@ -22,6 +22,7 @@ from brain.conversation.conversation_summary_model import (
     ConversationSummaryModel,
 )
 from database.user_model import User
+from database.refresh_token_model import RefreshToken
 from database.feedback_model import Feedback
 from database.response_feedback_model import ResponseFeedback
 from database.notification_model import NotificationEntity

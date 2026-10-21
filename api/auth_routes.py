@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 logger = logging.getLogger(__name__)
 from pydantic import BaseModel, EmailStr
 
@@ -35,6 +35,20 @@ from security.dependencies import get_current_user
 from api.notification_dependencies import get_notification_service
 from brain.notification.notification_service import NotificationService
 from brain.notification.notification_types import NotificationType
+
+import os
+from datetime import datetime, timezone
+
+from fastapi import Response
+from services.refresh_token_service import RefreshTokenService
+
+
+REFRESH_COOKIE_NAME = "irabrain_refresh_token"
+
+IS_PRODUCTION = (
+    os.getenv("ENVIRONMENT", "development").lower()
+    == "production"
+)
 
 router = APIRouter(
     prefix="/auth",
@@ -117,7 +131,7 @@ This code expires in 10 minutes.
 
 If you did not create an IRABRAIN account, you can ignore this email.
 
-— IRABRAIN
+â€” IRABRAIN
 """,
         )
 
@@ -307,7 +321,7 @@ This code expires in 10 minutes.
 
 If you did not request this code, you can ignore this email.
 
-— IRABRAIN
+â€” IRABRAIN
 """,
         )
 
@@ -379,7 +393,7 @@ This code expires in 10 minutes.
 
 If you did not create an IRABRAIN account, you can ignore this email.
 
-— IRABRAIN
+â€” IRABRAIN
 """,
         )
 
@@ -412,6 +426,7 @@ If you did not create an IRABRAIN account, you can ignore this email.
     response_model=AuthResponse,
 )
 def verify_login_code(
+    response: Response,
     request: VerifyLoginCodeRequest,
     http_request: Request,
     db: Session = Depends(get_db),
@@ -437,6 +452,7 @@ def verify_login_code(
         access_token = create_access_token(
             user.user_id
         )
+        issue_refresh_cookie(response, db, user.user_id)
 
         return AuthResponse(
             access_token=access_token,
@@ -474,6 +490,7 @@ def verify_login_code(
     response_model=AuthResponse,
 )
 def login(
+    response: Response,
     request: LoginRequest,
     http_request: Request,
     db: Session = Depends(get_db),
@@ -499,6 +516,7 @@ def login(
         access_token = create_access_token(
             user.user_id
         )
+        issue_refresh_cookie(response, db, user.user_id)
 
         return AuthResponse(
             access_token=access_token,
@@ -532,6 +550,7 @@ class GoogleLoginRequest(BaseModel):
     response_model=AuthResponse,
 )
 def google_login(
+    response: Response,
     request: GoogleLoginRequest,
     http_request: Request,
     db: Session = Depends(get_db),
@@ -556,6 +575,7 @@ def google_login(
         access_token = create_access_token(
             user.user_id
         )
+        issue_refresh_cookie(response, db, user.user_id)
 
         return AuthResponse(
             access_token=access_token,
@@ -694,3 +714,163 @@ def change_password(
             status_code=500,
             detail="Unable to change password.",
         ) from None
+
+
+def set_refresh_cookie(
+    response: Response,
+    token: str,
+    expires_at: datetime,
+) -> None:
+    remaining_seconds = max(
+        0,
+        int(
+            (
+                expires_at
+                - datetime.now(timezone.utc)
+            ).total_seconds()
+        ),
+    )
+
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        secure=IS_PRODUCTION,
+        samesite="none" if IS_PRODUCTION else "lax",
+        max_age=remaining_seconds,
+        path="/auth",
+    )
+
+
+def clear_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=REFRESH_COOKIE_NAME,
+        path="/auth",
+        secure=IS_PRODUCTION,
+        httponly=True,
+        samesite="none" if IS_PRODUCTION else "lax",
+    )
+
+
+@router.post("/refresh")
+def refresh_session(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    origin = request.headers.get("origin")
+
+    allowed_origins = {
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://irabrain.com",
+        "https://www.irabrain.com",
+        "https://irabrain-app.netlify.app",
+    }
+
+    if origin not in allowed_origins:
+        raise HTTPException(
+            status_code=403,
+            detail="Request origin is not allowed.",
+        )
+
+    raw_token = request.cookies.get(
+        REFRESH_COOKIE_NAME
+    )
+
+    if not raw_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Refresh session is missing.",
+        )
+
+    service = RefreshTokenService(db)
+
+    try:
+        result = service.rotate(raw_token)
+
+        if result is None:
+            db.commit()
+            clear_refresh_cookie(response)
+
+            raise HTTPException(
+                status_code=401,
+                detail="Refresh session is invalid or expired.",
+            )
+
+        user_id, replacement, expires_at = result
+
+        access_token = create_access_token(user_id)
+
+        set_refresh_cookie(
+            response,
+            replacement,
+            expires_at,
+        )
+
+        db.commit()
+
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+        }
+
+    except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        logger.exception("Session refresh failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to refresh session.",
+        ) from None
+
+
+@router.post("/logout")
+def logout(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    origin = request.headers.get("origin")
+    allowed_origins = {
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://irabrain.com",
+        "https://www.irabrain.com",
+        "https://irabrain-app.netlify.app",
+    }
+
+    if origin not in allowed_origins:
+        raise HTTPException(
+            status_code=403,
+            detail="Origin not allowed.",
+        )
+
+    raw_token = request.cookies.get(REFRESH_COOKIE_NAME)
+
+    try:
+        if raw_token:
+            RefreshTokenService(db).revoke(raw_token)
+            db.commit()
+
+        clear_refresh_cookie(response)
+        return {"success": True}
+
+    except Exception:
+        db.rollback()
+        logger.exception("Logout failed")
+        clear_refresh_cookie(response)
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to complete logout.",
+        ) from None
+
+def issue_refresh_cookie(response: Response, db: Session, user_id: int) -> None:
+    try:
+        token, expires_at = RefreshTokenService(db).create(user_id)
+        set_refresh_cookie(response, token, expires_at)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
