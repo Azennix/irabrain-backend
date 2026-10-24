@@ -209,7 +209,6 @@ Rules:
         try:
             visual = self.llm_service.generate_structured(
                 prompt,
-                request_context=request_context,
                 temperature=0.0,
             )
 
