@@ -253,6 +253,7 @@ def get_conversation_history(
                 "id": message.message_id,
                 "role": message.role,
                 "content": message.content,
+                "visual_data": getattr(message, "visual_data", None),
             }
             for message in messages
         ]

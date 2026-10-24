@@ -185,11 +185,11 @@ class ConversationRepository:
         user_id: int,
         role: str,
         content: str,
-        conversation_id: str | None = None
+        conversation_id: str | None = None,
+        visual_data: dict | None = None
     ):
         # Verify ownership before attaching a message
         # to an existing conversation.
-
         if conversation_id is not None:
             conversation = (
                 self.db.query(ConversationModel)
@@ -202,11 +202,13 @@ class ConversationRepository:
 
             if conversation is None:
                 raise ValueError("Conversation not found.")
+
         message = ConversationMessageModel(
             user_id=user_id,
             conversation_id=conversation_id,
             role=role,
-            content=content
+            content=content,
+            visual_data=visual_data
         )
 
         self.db.add(message)

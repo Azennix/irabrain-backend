@@ -31,6 +31,7 @@ class ConversationMessageResponse(BaseModel):
     message_id: int
     role: str
     content: str
+    visual_data: dict | None = None
 
 
 class ConversationResponse(BaseModel):

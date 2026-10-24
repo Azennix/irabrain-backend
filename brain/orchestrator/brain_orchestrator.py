@@ -1,4 +1,4 @@
-﻿import time
+import time
 from uuid import uuid4
 from brain.retrieval.hybrid_retriever import HybridRetriever
 from brain.memory.importance_scorer import MemoryImportanceScorer
@@ -1536,6 +1536,8 @@ class BrainOrchestrator:
         print("====================================")
 
         # =================================================
+        visual_payload = None
+
         # VISUAL INTELLIGENCE
         # =================================================
         print(
@@ -1605,7 +1607,8 @@ class BrainOrchestrator:
             self.conversation_service.save_assistant_message(
                 user_id=request.user_id,
                 content=full_response,
-                conversation_id=request.conversation_id
+                conversation_id=request.conversation_id,
+                visual_data=visual_payload
     )
 
             print("[OK] Assistant response saved")
