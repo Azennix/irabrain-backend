@@ -75,7 +75,8 @@ class BrainService:
         attachments: list | None = None,
         workspace_mode: str = "personal",
         session_id: str | None = None,
-):
+        on_visual=None,
+    ):
         processed_attachments = [
             self.attachment_processor.process_attachment(
                 attachment.model_dump()
@@ -97,8 +98,9 @@ class BrainService:
     )
 
         yield from self.orchestrator.process_stream(
-            request=request
-    )
+            request=request,
+            on_visual=on_visual,
+        )
 
     def guest_chat(
         self,

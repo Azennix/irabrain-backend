@@ -1,4 +1,4 @@
-from brain.engine.engine import Engine
+﻿from brain.engine.engine import Engine
 from brain.llm.chat_prompt_builder import ChatPromptBuilder
 from brain.chat.response_validator import ResponseValidator
 from brain.chat.confidence_controller import ConfidenceController
@@ -171,3 +171,74 @@ class ChatEngine(Engine):
         print(
             "=============================================="
         )
+    def generate_visual(
+        self,
+        *,
+        user_message: str,
+        assistant_response: str,
+        request_context: LLMRequestContext,
+    ) -> dict | None:
+
+        prompt = f"""
+Create a visual representation only if it meaningfully
+improves understanding of the user's question and answer.
+
+USER QUESTION:
+{user_message}
+
+ASSISTANT ANSWER:
+{assistant_response}
+
+Return a JSON object with these fields:
+- type: concept_map, flowchart, comparison, or steps
+- title: short descriptive title
+- description: optional explanation
+- nodes: concept map nodes with id, label, and optional description
+- edges: connections with from, to, and optional label
+- steps: ordered items with title and optional description
+- columns: comparison column names
+- comparisons: comparison items with label and values
+
+Rules:
+- Return {{"type": "none"}} if a visual is unnecessary.
+- Use only facts supported by the answer.
+- Use valid JSON.
+- Do not include Markdown fences.
+"""
+
+        try:
+            visual = self.llm_service.generate_structured(
+                prompt,
+                request_context=request_context,
+                temperature=0.0,
+            )
+
+            if not isinstance(visual, dict):
+                return None
+
+            visual_type = visual.get("type")
+
+            if visual_type == "none":
+                return None
+
+            if visual_type not in {
+                "concept_map",
+                "flowchart",
+                "comparison",
+                "steps",
+            }:
+                return None
+
+            if not isinstance(visual.get("title"), str):
+                return None
+
+            visual["title"] = visual["title"][:200]
+
+            return visual
+
+        except Exception as error:
+            print(
+                "[VISUAL INTELLIGENCE] Generation failed:",
+                str(error),
+            )
+            return None

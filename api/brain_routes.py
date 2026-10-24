@@ -364,6 +364,7 @@ def chat_stream(
     current_user=Depends(get_current_user),
     brain_service: BrainService = Depends(get_brain_service),
 ):
+    visual_payloads = []
     try:
         stream = brain_service.chat_stream(
             user_id=current_user.user_id,
@@ -374,6 +375,7 @@ def chat_stream(
             attachments=request.attachments,
             workspace_mode=request.workspace_mode,
             session_id=request.session_id,
+            on_visual=visual_payloads.append
         )
     except TierEntitlementError as error:
         raise HTTPException(
@@ -436,6 +438,15 @@ def chat_stream(
                 except Exception:
                 # Title generation must not break a successful chat.
                     pass
+            for visual_payload in visual_payloads:
+                print(
+                    "[VISUAL DEBUG] Sending visual event:",
+                    visual_payload.get("type"),
+                )
+                yield (
+                    "event: visual\n"
+                    f"data: {json.dumps({'visual': visual_payload})}\n\n"
+                )
 
             yield (
                 "event: complete\n"

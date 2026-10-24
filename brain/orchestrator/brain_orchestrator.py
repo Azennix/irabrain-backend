@@ -1,4 +1,4 @@
-import time
+﻿import time
 from uuid import uuid4
 from brain.retrieval.hybrid_retriever import HybridRetriever
 from brain.memory.importance_scorer import MemoryImportanceScorer
@@ -26,6 +26,7 @@ from brain.llm.llm_factory import LLMFactory
 from brain.llm.memory_llm_service import MemoryLLMService
 from brain.llm.usage_tracker import UsageTracker
 from brain.llm.deepseek_service import DeepSeekService
+from brain.llm.llm_request_context import LLMRequestContext
 
 
 from decimal import Decimal
@@ -782,7 +783,8 @@ class BrainOrchestrator:
     def process_stream(
         self,
         request: BrainRequest,
-        conversation_history=None
+        conversation_history=None,
+        on_visual=None,
     ):
 
         print("\n")
@@ -1279,7 +1281,7 @@ class BrainOrchestrator:
 
 
         print("[OK] Context assembled")
-        print("🔥🔥🔥 SUMMARY RUNTIME MARKER 999 🔥🔥🔥")
+        print("ðŸ”¥ðŸ”¥ðŸ”¥ SUMMARY RUNTIME MARKER 999 ðŸ”¥ðŸ”¥ðŸ”¥")
 
 
         print(
@@ -1534,6 +1536,41 @@ class BrainOrchestrator:
         print("====================================")
 
         # =================================================
+        # VISUAL INTELLIGENCE
+        # =================================================
+        print(
+           "[VISUAL DEBUG]",
+            "on_visual_is_none =", on_visual is None,
+             "response_is_empty =", not bool(full_response.strip()),
+)
+        if on_visual is not None and full_response.strip():
+            try:
+                print("\n[VISUAL INTELLIGENCE] Generating visual...")
+                request_context = LLMRequestContext(
+                    request_id=request.request_id,
+                    user_id=request.user_id,
+                    brain_tier=brain_tier,
+                )
+                visual_payload = selected_chat_engine.generate_visual(
+                    user_message=request.query,
+                    assistant_response=full_response,
+                    request_context=request_context,
+                )
+
+                if visual_payload is not None:
+                    on_visual(visual_payload)
+                    print("[VISUAL INTELLIGENCE] Visual generated.")
+                else:
+                    print("[VISUAL INTELLIGENCE] No visual needed.")
+
+            except Exception as error:
+                print(
+                    "[VISUAL INTELLIGENCE] Integration failed:",
+                    str(error),
+                )
+
+        # =================================================
+
         # 19. SAVE ASSISTANT RESPONSE
         # =================================================
 
