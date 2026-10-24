@@ -180,8 +180,7 @@ class ChatEngine(Engine):
     ) -> dict | None:
 
         prompt = f"""
-Create a visual representation only if it meaningfully
-improves understanding of the user's question and answer.
+Create a visual representation only Create a simple, clear, structured visual that helps the user understand the answer.
 
 USER QUESTION:
 {user_message}
@@ -189,21 +188,43 @@ USER QUESTION:
 ASSISTANT ANSWER:
 {assistant_response}
 
-Return a JSON object with these fields:
-- type: concept_map, flowchart, comparison, or steps
-- title: short descriptive title
-- description: optional explanation
-- nodes: concept map nodes with id, label, and optional description
-- edges: connections with from, to, and optional label
-- steps: ordered items with title and optional description
-- columns: comparison column names
-- comparisons: comparison items with label and values
+Choose the most suitable visual type:
 
-Rules:
-- Return {{"type": "none"}} if a visual is unnecessary.
-- Use only facts supported by the answer.
-- Use valid JSON.
-- Do not include Markdown fences.
+* concept_map: connected concepts and their relationships.
+* flowchart: a process or sequence of actions.
+* comparison: differences or similarities between two or more things.
+* steps: an ordered explanation or procedure.
+
+Return a valid JSON object with these fields:
+
+* type: concept_map, flowchart, comparison, steps, or none
+* title: short descriptive title
+* description: optional, concise explanation
+* nodes: concept map nodes with id, label, and optional description
+* edges: connections with from, to, and optional label
+* steps: ordered items with title and optional description
+* columns: comparison column names
+* comparisons: comparison items with label and values
+
+Visual design rules:
+
+* Prefer the simplest visual that makes the answer easier to understand.
+* Use short labels and concise descriptions.
+* Keep each box focused on one idea.
+* Use clear relationships and meaningful connections.
+* For concept maps, create a central concept and its main related concepts. Use edges to connect them.
+* For flowcharts, show the process in the correct order.
+* For steps, show a clear numbered sequence.
+* For comparisons, use aligned columns with matching comparison categories.
+* Include only the fields needed for the selected visual type.
+* Use only facts supported by the assistant's answer.
+* Do not repeat the full text answer inside the visual.
+* Never generate ASCII diagrams, text-drawn boxes, Markdown tables, or code fences.
+* Do not put multiple unrelated ideas into one box.
+* Avoid unnecessarily large or complicated visuals.
+* If a visual genuinely adds no value, return {{"type": "none"}}.
+
+Return valid JSON only. Do not include Markdown fences.
 """
 
         try:
