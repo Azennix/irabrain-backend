@@ -395,6 +395,8 @@ def chat_stream(
             detail=_entitlement_error_response(error)["detail"],
         ) from error
     except Exception as error:
+        import logging
+        logging.getLogger(__name__).exception("Chat stream failed while retrieving the first response chunk")
         stream.close()
         raise HTTPException(
             status_code=500,
