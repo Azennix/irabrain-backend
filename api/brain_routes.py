@@ -396,7 +396,7 @@ def chat_stream(
         ) from error
     except Exception as error:
         import logging
-        logging.getLogger(__name__).exception("Chat stream failed while retrieving the first response chunk")
+        logging.getLogger(__name__).exception("Chat stream failed while retrieving the first response chunk: %s: %s", type(error).__name__, error)
         stream.close()
         raise HTTPException(
             status_code=500,
