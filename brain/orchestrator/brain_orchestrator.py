@@ -849,7 +849,18 @@ class BrainOrchestrator:
                 self.conversation_service.save_user_message(
                     user_id=request.user_id,
                     content=request.query,
-                    conversation_id=request.conversation_id
+                    conversation_id=request.conversation_id,
+                    attachments=[
+                        {
+                            "type": (a.get("type") if isinstance(a, dict) else getattr(a, "type", None)),
+                            "name": (a.get("name") if isinstance(a, dict) else getattr(a, "name", None)),
+                            "mime_type": (a.get("mime_type") if isinstance(a, dict) else getattr(a, "mime_type", None)),
+                            "page_count": (a.get("page_count") if isinstance(a, dict) else getattr(a, "page_count", None)),
+                            "status": (a.get("status") if isinstance(a, dict) else getattr(a, "status", None)),
+                        }
+                        for a in (request.attachments or [])
+                        if (a.get("name") if isinstance(a, dict) else getattr(a, "name", None))
+                    ]
         )
     )
 
@@ -1282,8 +1293,6 @@ class BrainOrchestrator:
 
         print("[OK] Context assembled")
         print("ðŸ”¥ðŸ”¥ðŸ”¥ SUMMARY RUNTIME MARKER 999 ðŸ”¥ðŸ”¥ðŸ”¥")
-
-
         print(
             "[SUMMARY CHECK]",
             bool(assembled_context.conversation_summary),

@@ -12,4 +12,5 @@ class ConversationMessageModel(Base):
     role = Column(String(20), nullable=False)
     content = Column(Text, nullable=False)
     visual_data = Column(JSON, nullable=True)
+    attachments = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

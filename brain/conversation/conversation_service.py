@@ -111,13 +111,15 @@ class ConversationService:
         self,
         user_id: int,
         content: str,
-        conversation_id: str | None = None
+        conversation_id: str | None = None,
+        attachments: list[dict] | None = None
     ):
         return self.repository.save(
             user_id=user_id,
             role="user",
             content=content,
-            conversation_id=conversation_id
+            conversation_id=conversation_id,
+            attachments=attachments
         )
 
     # =====================================================

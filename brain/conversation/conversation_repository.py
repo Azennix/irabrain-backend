@@ -1,4 +1,4 @@
-from datetime import datetime
+﻿from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -186,7 +186,8 @@ class ConversationRepository:
         role: str,
         content: str,
         conversation_id: str | None = None,
-        visual_data: dict | None = None
+        visual_data: dict | None = None,
+        attachments: list[dict] | None = None
     ):
         # Verify ownership before attaching a message
         # to an existing conversation.
@@ -208,7 +209,8 @@ class ConversationRepository:
             conversation_id=conversation_id,
             role=role,
             content=content,
-            visual_data=visual_data
+            visual_data=visual_data,
+            attachments=attachments or None
         )
 
         self.db.add(message)

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+﻿from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 import json
 from services.brain_service import BrainService
@@ -254,6 +254,7 @@ def get_conversation_history(
                 "role": message.role,
                 "content": message.content,
                 "visual_data": getattr(message, "visual_data", None),
+                "attachments": getattr(message, "attachments", None) or [],
             }
             for message in messages
         ]
