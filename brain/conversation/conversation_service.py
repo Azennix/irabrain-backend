@@ -131,7 +131,7 @@ class ConversationService:
         user_id: int,
         content: str,
         conversation_id: str | None = None,
-        visual_data: dict | None = None
+        visual_data: dict | list[dict] | None = None
     ):
         return self.repository.save(
             user_id=user_id,
@@ -142,6 +142,22 @@ class ConversationService:
         )
 
     # =====================================================
+    # =====================================================
+    # UPDATE ASSISTANT MESSAGE VISUAL
+    # =====================================================
+
+    def update_assistant_visual(
+        self,
+        *,
+        user_id: int,
+        message_id: int,
+        visual_data: dict | list[dict],
+    ):
+        return self.repository.update_assistant_visual(
+            user_id=user_id,
+            message_id=message_id,
+            visual_data=visual_data,
+        )
     # RECENT CONVERSATION
     # =====================================================
 

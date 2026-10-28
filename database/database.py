@@ -1,4 +1,4 @@
-import os
+﻿import os
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
@@ -33,7 +33,7 @@ if not DATABASE_URL:
 
 engine = create_engine(
     DATABASE_URL,
-    echo=True,
+    echo=os.getenv("SQL_ECHO", "false").lower() == "true",
 )
 
 

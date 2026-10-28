@@ -1,9 +1,9 @@
-﻿from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 import json
 from services.brain_service import BrainService
 from security.dependencies import get_current_user
-
+import time
 from api.schemas.brain_schema import (
     BrainChatRequest,
     CreateConversationRequest,
@@ -24,6 +24,15 @@ from brain.tier.capability_policy import CapabilityPolicy
 from brain.tier.capability_requirement import CapabilityRequirement
 from brain.tier.entitlement.service import TierEntitlementService
 from brain.tier.models import BrainTier
+
+
+import asyncio
+import json
+from concurrent.futures import ThreadPoolExecutor
+
+# Global executor - FastAPI ni block cheyaku
+stream_executor = ThreadPoolExecutor(max_workers=20, thread_name_prefix="brain_parallel")
+
 
 router = APIRouter(
     prefix="/brain",
@@ -360,117 +369,115 @@ def forget_memory(
 # STREAMING CHAT
 # =====================================================
 
+# =====================================================
+# STREAMING CHAT - REAL PIPELINE STATES
+# =====================================================
+
 @router.post("/chat/stream")
-def chat_stream(
+async def chat_stream(
     request: BrainChatRequest,
+    background_tasks: BackgroundTasks,
     current_user=Depends(get_current_user),
     brain_service: BrainService = Depends(get_brain_service),
 ):
-    visual_payloads = []
-    try:
-        stream = brain_service.chat_stream(
-            user_id=current_user.user_id,
-            query=request.query,
-            conversation_id=request.conversation_id,
-            project_id=request.project_id,
-            user_name=current_user.full_name,
-            attachments=request.attachments,
-            workspace_mode=request.workspace_mode,
-            session_id=request.session_id,
-            on_visual=visual_payloads.append
-        )
-    except TierEntitlementError as error:
-        raise HTTPException(
-            status_code=403,
-            detail=_entitlement_error_response(error)["detail"],
-        ) from error
+    event_queue: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+    stream_started_at = time.perf_counter()
+    first_chunk_logged = False
 
-    try:
-        first_chunk = next(stream)
-    except StopIteration:
-        first_chunk = None
-    except TierEntitlementError as error:
-        stream.close()
-        raise HTTPException(
-            status_code=403,
-            detail=_entitlement_error_response(error)["detail"],
-        ) from error
-    except Exception as error:
-        import logging
-        logging.getLogger(__name__).exception("Chat stream failed while retrieving the first response chunk: %s: %s", type(error).__name__, error)
-        stream.close()
-        raise HTTPException(
-            status_code=500,
-            detail="I'm having trouble processing your request right now. Please try again shortly.",
-        ) from error
-
-    def generate():
-        assistant_chunks = []
-
+    def on_visual_callback(payload):
         try:
-            if first_chunk is not None:
-                assistant_chunks.append(first_chunk)
+            loop.call_soon_threadsafe(event_queue.put_nowait, {"type": "visual", "payload": payload})
+        except Exception as e:
+            print(f"[VISUAL CALLBACK ERROR] {e}")
 
-                yield (
-                    "event: chunk\n"
-                    f"data: {json.dumps({'text': first_chunk})}\n\n"
+    def on_state_callback(state): # <-- REAL STATES
+        try:
+            print(f"[REAL STATE QUEUE] {state}")
+            loop.call_soon_threadsafe(event_queue.put_nowait, {"type": "state", "payload": state})
+        except Exception as e:
+            print(f"[STATE CALLBACK ERROR] {e}")
+
+    def run_brain_sync():
+        try:
+            stream = brain_service.chat_stream(
+                user_id=current_user.user_id,
+                query=request.query,
+                conversation_id=request.conversation_id,
+                project_id=request.project_id,
+                user_name=current_user.full_name,
+                attachments=request.attachments,
+                workspace_mode=request.workspace_mode,
+                session_id=request.session_id,
+                on_visual=on_visual_callback,
+                on_state=on_state_callback, # <-- PASS REAL STATES
             )
-
             for chunk in stream:
-                assistant_chunks.append(chunk)
+                loop.call_soon_threadsafe(event_queue.put_nowait, {"type": "chunk", "payload": chunk})
 
-                yield (
-                    "event: chunk\n"
-                    f"data: {json.dumps({'text': chunk})}\n\n"
-            )
+            loop.call_soon_threadsafe(event_queue.put_nowait, {"type": "text_complete"})
+        except Exception as e:
+            print(f"[BRAIN THREAD ERROR] {e}")
+            import traceback
+            traceback.print_exc()
+            loop.call_soon_threadsafe(event_queue.put_nowait, {"type": "error", "payload": str(e)})
+        finally:
+            loop.call_soon_threadsafe(event_queue.put_nowait, {"type": "complete"})
 
-        # Generate a title only after the response completes.
-        # Reuse the existing title-generation service.
-            if (
-                request.conversation_id
-                and request.workspace_mode == "personal"
-                and assistant_chunks
-        ):
-                try:
-                    generate_conversation_title(
+    executor_future = loop.run_in_executor(stream_executor, run_brain_sync)
+
+    async def event_generator():
+        full_text = []
+        while True:
+            event = await event_queue.get()
+
+            if event["type"] == "chunk":
+
+
+                if not first_chunk_logged:
+                    first_chunk_logged = True
+
+                    print(
+                         "[SSE TIMING] First chunk reached event_generator: "
+                          f"{time.perf_counter() - stream_started_at:.3f}s"
+    )
+                full_text.append(event["payload"])
+                yield f"event: chunk\ndata: {json.dumps({'text': event['payload']})}\n\n"
+
+            elif event["type"] == "visual":
+                print(f"[SSE PARALLEL] Visual event sent")
+                yield f"event: visual\ndata: {json.dumps({'visual': event['payload']})}\n\n"
+
+            elif event["type"] == "state": # <-- REAL PIPELINE STATE
+                print(f"[SSE REAL STATE] {event['payload']}")
+                yield f"event: state\ndata: {json.dumps({'state': event['payload']})}\n\n"
+
+            elif event["type"] == "text_complete":
+                yield f"event: text_complete\ndata: {{\"success\": true}}\n\n"
+                if request.conversation_id and request.workspace_mode == "personal" and full_text:
+                    background_tasks.add_task(
+                        generate_conversation_title,
                         user_id=current_user.user_id,
                         conversation_id=request.conversation_id,
-                       user_message=request.query,
-                       assistant_response="".join(assistant_chunks),
-                       llm_service=brain_service.orchestrator.llm_service,
-                )
-                except Exception:
-                # Title generation must not break a successful chat.
-                    pass
-            for visual_payload in visual_payloads:
-                print(
-                    "[VISUAL DEBUG] Sending visual event:",
-                    visual_payload.get("type"),
-                )
-                yield (
-                    "event: visual\n"
-                    f"data: {json.dumps({'visual': visual_payload})}\n\n"
-                )
+                        user_message=request.query,
+                        assistant_response="".join(full_text),
+                        llm_service=brain_service.orchestrator.llm_service,
+                    )
 
-            yield (
-                "event: complete\n"
-                'data: {"success": true}\n\n'
-        )
+            elif event["type"] == "complete":
+                yield f"event: complete\ndata: {{\"success\": true}}\n\n"
+                break
 
-        except Exception:
-            yield (
-                "event: error\n"
-                + 'data: {"message": "The response was interrupted before it finished. Please try again."}\n\n'
-        )
-
-        finally:
-            stream.close()
+            elif event["type"] == "error":
+                yield f"event: error\ndata: {json.dumps({'message': event['payload']})}\n\n"
+                break
 
     return StreamingResponse(
-        generate(),
+        event_generator(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
         },
     )

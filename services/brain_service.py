@@ -76,6 +76,7 @@ class BrainService:
         workspace_mode: str = "personal",
         session_id: str | None = None,
         on_visual=None,
+        on_state=None,
     ):
         processed_attachments = [
             self.attachment_processor.process_attachment(
@@ -100,6 +101,7 @@ class BrainService:
         yield from self.orchestrator.process_stream(
             request=request,
             on_visual=on_visual,
+            on_state=on_state,
         )
 
     def guest_chat(
@@ -119,6 +121,30 @@ class BrainService:
 
         return self.orchestrator.process(
             request=request
+        )
+
+
+
+    def guest_chat_stream(
+        self,
+        query: str,
+        session_id: str,
+        on_visual=None,
+        on_state=None,
+    ):
+        request = BrainRequest(
+            user_id=0,
+            query=query,
+            session_id=session_id,
+            metadata={
+                "workspace_mode": "guest",
+            },
+        )
+
+        yield from self.orchestrator.process_stream(
+            request=request,
+            on_visual=on_visual,
+            on_state=on_state,
         )
 
         # =====================================================

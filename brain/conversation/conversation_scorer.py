@@ -89,15 +89,35 @@ class ConversationScorer:
                 for message in messages
     ]
 
+        # Only send messages that still require LLM judgment.
+        # Near-duplicate user messages already have deterministic scores.
+        messages_to_score = [
+            message
+            for message in messages
+            if str(message.message_id) not in near_repeat_ids
+        ]
+
+        # All messages were resolved deterministically.
+        if not messages_to_score:
+            return [
+                ConversationScore(
+                    message_id=str(message.message_id),
+                    score=1.0,
+                    is_high_value=True,
+                    reasoning="near-duplicate of current message (deterministic match)",
+                )
+                for message in messages
+            ]
+
         prompt = self._build_prompt(
-            messages,
-            current_message
-)
+            messages_to_score,
+            current_message,
+        )
 
         result = self.llm_service.generate_structured(
             prompt=prompt,
-            temperature=0.0
-)
+            temperature=0.0,
+        )
 
 
 

@@ -1,7 +1,12 @@
 import time
+import threading
 from uuid import uuid4
 from brain.retrieval.hybrid_retriever import HybridRetriever
 from brain.memory.importance_scorer import MemoryImportanceScorer
+
+
+from brain.visual.visual_service import VisualIntelligenceService
+from brain.llm.llm_request_context import LLMRequestContext
 
 
 from database.user_repository import UserRepository
@@ -785,7 +790,15 @@ class BrainOrchestrator:
         request: BrainRequest,
         conversation_history=None,
         on_visual=None,
+        on_state=None,
     ):
+        def emit(s):
+            print(f"[REAL PIPELINE] {s}")
+            if on_state:
+                try: on_state(s)
+                except: pass
+
+
 
         print("\n")
         print("=" * 70)
@@ -874,7 +887,7 @@ class BrainOrchestrator:
         # =================================================
         # 2. MESSAGE ANALYSIS
         # =================================================
-
+        emit("analyzing")
         semantic_result = self.message_analyzer.analyze(
             request=request,
             conversation_history=conversation_history,
@@ -910,6 +923,7 @@ class BrainOrchestrator:
             memories = []
 
         else:
+            emit("retrieving")
 
             memories = self.hybrid_retriever.retrieve(
                 user_id=request.user_id,
@@ -954,6 +968,7 @@ class BrainOrchestrator:
 
         print("\n")
         print("========== 5. TOOL DECISION ==========")
+        emit("tool_checking")
 
         tool_decision = (
             self.tool_decision_coordinator.decide(
@@ -997,6 +1012,7 @@ class BrainOrchestrator:
 
         print("\n")
         print("========== 7. TOOL EXECUTION ==========")
+        emit("tool_executing")
 
         tool_result = None
 
@@ -1023,6 +1039,7 @@ class BrainOrchestrator:
 
         print("\n")
         print("========== 8. LANGUAGE PIPELINE ==========")
+        emit("translating")
 
         (
             language_result,
@@ -1045,6 +1062,7 @@ class BrainOrchestrator:
 
         print("\n")
         print("========== 9. BRAIN ROUTING ==========")
+        emit("routing")
 
         routes = self.router.route(
             analysis=analysis,
@@ -1171,8 +1189,7 @@ class BrainOrchestrator:
 
         print("\n")
         print("========== 10. MEMORY ENGINE ==========")
-
-
+        emit("memorizing")
 
         if (
             "memory" in routes
@@ -1480,6 +1497,7 @@ class BrainOrchestrator:
 
         print("\n")
         print("========== 17. REASONING ENGINE ==========")
+        emit("reasoning")
 
         reasoning_result = None
 
@@ -1512,14 +1530,23 @@ class BrainOrchestrator:
 
         print("==========================================")
 
-        # =================================================
-        # 18. CHAT ENGINE
+               # =================================================
+        # 18. CHAT ENGINE [TRUE PARALLEL - 0 SEC START]
         # =================================================
 
         print("\n")
-        print("========== 18. CHAT ENGINE ==========")
+        print("========== 18. CHAT ENGINE [TRUE PARALLEL] ==========")
 
-        full_response = ""
+        full_response_parts = []
+        visual_service = VisualIntelligenceService(selected_chat_engine)
+        request_context = LLMRequestContext(
+            request_id=request.request_id,
+            user_id=request.user_id,
+            brain_tier=brain_tier,
+        )
+
+        # Visual generation runs after the complete assistant response exists.
+        emit("visualizing")
 
         print("[INFO] Starting ChatEngine stream...")
 
@@ -1532,61 +1559,28 @@ class BrainOrchestrator:
             language_policy=language_policy,
             brain_tier=brain_tier,
         ):
-
-            full_response += chunk
-
+            full_response_parts.append(chunk)
             yield chunk
 
+        full_response = "".join(full_response_parts)
         print("\n[OK] ChatEngine stream completed")
-
-        print("Response length :")
-        print(len(full_response))
-
+        print(f"Response length: {len(full_response)}")
         print("====================================")
 
-        # =================================================
-        visual_payload = None
+        # DO NOT JOIN - let it run in background, router handles it
 
-        # VISUAL INTELLIGENCE
-        # =================================================
-        print(
-           "[VISUAL DEBUG]",
-            "on_visual_is_none =", on_visual is None,
-             "response_is_empty =", not bool(full_response.strip()),
-)
-        if on_visual is not None and full_response.strip():
-            try:
-                print("\n[VISUAL INTELLIGENCE] Generating visual...")
-                request_context = LLMRequestContext(
-                    request_id=request.request_id,
-                    user_id=request.user_id,
-                    brain_tier=brain_tier,
-                )
-                visual_payload = selected_chat_engine.generate_visual(
-                    user_message=request.query,
-                    assistant_response=full_response,
-                    request_context=request_context,
-                )
-
-                if visual_payload is not None:
-                    on_visual(visual_payload)
-                    print("[VISUAL INTELLIGENCE] Visual generated.")
-                else:
-                    print("[VISUAL INTELLIGENCE] No visual needed.")
-
-            except Exception as error:
-                print(
-                    "[VISUAL INTELLIGENCE] Integration failed:",
-                    str(error),
-                )
+        # NOTE: We DO NOT join() visual_thread here.
+        # We let it run in background. API layer will handle it.
+        # This is the key for long-term non-blocking product.
 
         # =================================================
-
         # 19. SAVE ASSISTANT RESPONSE
         # =================================================
 
         print("\n")
         print("========== 19. SAVE ASSISTANT RESPONSE ==========")
+
+        saved_assistant_message = None
 
         if workspace_mode == "private":
 
@@ -1594,31 +1588,28 @@ class BrainOrchestrator:
                 session_id=request.session_id,
                 role="assistant",
                 content=full_response
-    )
+            )
+            print("[PRIVATE SPACE] Assistant response kept in temporary session")
 
-            print(
-                  "[PRIVATE SPACE] Assistant response kept in temporary session"
-    )
         elif workspace_mode == "guest":
 
             self.guest_session_service.add_message(
                 session_id=request.session_id,
                 role="assistant",
                 content=full_response
-    )
-
-            print(
-                "[GUEST SPACE] Assistant response kept in temporary session"
-    )
+            )
+            print("[GUEST SPACE] Assistant response kept in temporary session")
 
         else:
 
-            self.conversation_service.save_assistant_message(
-                user_id=request.user_id,
-                content=full_response,
-                conversation_id=request.conversation_id,
-                visual_data=visual_payload
-    )
+            saved_assistant_message = (
+                self.conversation_service.save_assistant_message(
+                    user_id=request.user_id,
+                    content=full_response,
+                    conversation_id=request.conversation_id,
+                    visual_data=None,  # Save with None first, don't block
+                )
+            )
 
             print("[OK] Assistant response saved")
 
@@ -1627,27 +1618,50 @@ class BrainOrchestrator:
                    self.conversation_summary_orchestrator.summarize_if_needed(
                        conversation_id=request.conversation_id,
                        user_id=request.user_id,
-        )
-    )
-
+                   )
+                )
                 if summary_result is not None:
                     self.conversation_service.commit()
 
-
-
         print("===================================================")
-
-
-
-
-        print("===================================================")
-
-        # =================================================
-        # COMPLETE
-        # =================================================
-
         print("\n")
         print("=" * 70)
+
+        # =================================================
+        # 19A. GENERATE AND PERSIST VISUALS
+        # =================================================
+        if on_visual is not None and full_response.strip():
+            try:
+                visual_payloads = visual_service.generate_multi(
+                    request.query,
+                    full_response,
+                    request_context,
+                )
+
+                if visual_payloads:
+                    if (
+                        workspace_mode not in ("private", "guest")
+                        and request.conversation_id
+                        and saved_assistant_message is not None
+                    ):
+                        persisted = self.conversation_service.update_assistant_visual(
+                            user_id=request.user_id,
+                            message_id=saved_assistant_message.message_id,
+                            visual_data=visual_payloads,
+                        )
+                        if not persisted:
+                            print(
+                                "[VISUAL WARNING] Visual payloads generated, "
+                                "but the assistant message was not updated."
+                            )
+
+                    on_visual(visual_payloads)
+                    print(
+                        f"[VISUAL] Emitted {len(visual_payloads)} visual payload(s)"
+                    )
+            except Exception as exc:
+                print(f"[VISUAL ERROR] Generation or persistence failed: {exc}")
+
         print("              BRAIN STREAM COMPLETE")
         print("=" * 70)
         print("\n")

@@ -1,3 +1,4 @@
+import time
 from fastapi import Depends
 from sqlalchemy.orm import Session
 from database.user_repository import UserRepository
@@ -75,25 +76,45 @@ from brain.subscription.service import SubscriptionService
 def get_brain_service(
     db: Session = Depends(get_db),
 ) -> BrainService:
+    started_at = time.perf_counter()
     self_development_gateway = create_self_development_gateway()
+    gateway_ready_at = time.perf_counter()
 
     core_integration_service = CoreIntegrationService(
         signal_handler=self_development_gateway.process,
     )
-
-    return BrainService(
+    integration_ready_at = time.perf_counter()
+    service = BrainService(
         db=db,
         core_integration_service=core_integration_service,
     )
+    service_ready_at = time.perf_counter()
+    print(
+        "[BRAIN INIT TIMING] "
+        f"gateway={gateway_ready_at - started_at:.3f}s | "
+        f"integration={integration_ready_at - gateway_ready_at:.3f}s | "
+        f"service_and_orchestrator={service_ready_at - integration_ready_at:.3f}s | "
+        f"total={service_ready_at - started_at:.3f}s"
+    )
+
+    return service
 
 
 def get_brain_balance_service(
     db: Session = Depends(get_db),
 ) -> BrainBalanceService:
+    free_brain_repository = FreeBrainEntitlementRepository(db)
+
+    free_brain_service = FreeBrainEntitlementService(
+        repository=free_brain_repository,
+        reset_policy=FreeBrainResetPolicy(),
+        consumption_policy=FreeBrainConsumptionPolicy(),
+    )
 
 
     return BrainBalanceService(
         wallet_repository=BrainWalletRepository(db),
+        free_brain_service=free_brain_service,
     )
 
 

@@ -15,57 +15,38 @@ class MemoryExtractor:
     ):
         self.llm = llm_service
 
-    def extract(
-        self,
-        request: BrainRequest
-    ) -> MemoryExtractionResult:
-
-        prompt = PromptBuilder.memory_extraction(
-            request.query
-        )
+    def extract(self, request: BrainRequest) -> MemoryExtractionResult:
+        prompt = PromptBuilder.memory_extraction(request.query)
 
         try:
             data = self.llm.generate_structured(
                 prompt=prompt,
-                temperature=0.0
+                temperature=0.0,
             )
-        except Exception as e:
-            print("\n=========⚠ Invalid JSON========")
-            print(e)
-            print("Retrying..once...\n")
-            print("===============================\n")
+        except Exception as first_error:
+            print("\n========= MEMORY EXTRACTION RETRY =========")
+            print(first_error)
+            print("Retrying once...")
+            print("===========================================\n")
 
             try:
-
-              data = self.llm.generate_structured(
-                prompt=prompt,
-                temperature=0.0
-            )
-
-            except Exception as e:
-                print("\n========== RETRY FAILED ==========")
-                print(e)
+                data = self.llm.generate_structured(
+                    prompt=prompt,
+                    temperature=0.0,
+                )
+            except Exception as retry_error:
+                print("\n========= MEMORY EXTRACTION FAILED =========")
+                print(retry_error)
                 print("Skipping memory extraction.")
-                print("=================================\n")
+                print("=============================================\n")
 
+                return MemoryExtractionResult(
+                    memories=[],
+                    reasoning="Memory extraction failed after retry",
+                    confidence=0.0,
+                )
 
-            return MemoryExtractionResult(
-                memories=[],
-                reasoning="JSON Parsing Failed",
-                confidence=0.0
-
-         )
-
-
-
-
-
-
-
-        return self._parse_result(
-            request=request,
-            data=data
-        )
+        return self._parse_result(request=request, data=data)
 
     def _parse_result(
         self,

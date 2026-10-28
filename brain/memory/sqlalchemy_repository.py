@@ -233,7 +233,6 @@ class SQLAlchemyMemoryRepository(MemoryRepository):
         user_id: int,
         query: str
     ):
-
         entities = (
             self.session.query(MemoryEntity)
             .filter(
@@ -243,22 +242,10 @@ class SQLAlchemyMemoryRepository(MemoryRepository):
             .all()
         )
 
-
-
-        for entity in entities:
-
-          print("------------")
-          print(entity.key)
-          print(type(entity.embedding))
-          print(entity.embedding)
-
-          if entity.embedding is None:
-           continue
-
         return [
-         self._to_domain(entity)
-        for entity in entities
-                 ]
+            self._to_domain(entity)
+            for entity in entities
+        ]
 
     # =====================================================
     # VECTOR SEARCH
@@ -271,9 +258,6 @@ class SQLAlchemyMemoryRepository(MemoryRepository):
     ):
 
         query_embedding = self.embedding_service.generate(query)
-        print("\nQUERY EMBEDDING")
-        print(type(query_embedding))
-        print(len(query_embedding))
 
 
 
@@ -288,11 +272,6 @@ class SQLAlchemyMemoryRepository(MemoryRepository):
         scored = []
 
         for entity in entities:
-            print(
-        entity.key,
-        "embedding is None ->",
-        entity.embedding is None
-    )
 
 
 
@@ -303,11 +282,6 @@ class SQLAlchemyMemoryRepository(MemoryRepository):
                 query_embedding,
                 entity.embedding
             )
-            print(
-    entity.key,
-    "->",
-    round(score, 3)
-)
 
             scored.append(
                 (
@@ -325,6 +299,28 @@ class SQLAlchemyMemoryRepository(MemoryRepository):
            (self._to_domain(entity), score)
             for score, entity in scored[:5]
         ]
+
+    def search_vector_from_memories(
+        self,
+        memories: list[Memory],
+        query: str
+    ) -> list[tuple[Memory, float]]:
+        """Rank already-loaded memories by cosine similarity."""
+        query_embedding = self.embedding_service.generate(query)
+        scored = []
+
+        for memory in memories:
+            if memory.embedding is None:
+                continue
+
+            score = self.similarity_service.cosine_similarity(
+                query_embedding,
+                memory.embedding
+            )
+            scored.append((memory, score))
+
+        scored.sort(key=lambda item: item[1], reverse=True)
+        return scored[:5]
 
     # =====================================================
     # UPDATE ACCESS

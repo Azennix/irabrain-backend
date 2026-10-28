@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -186,7 +186,7 @@ class ConversationRepository:
         role: str,
         content: str,
         conversation_id: str | None = None,
-        visual_data: dict | None = None,
+        visual_data: dict | list[dict] | None = None,
         attachments: list[dict] | None = None
     ):
         # Verify ownership before attaching a message
@@ -220,6 +220,35 @@ class ConversationRepository:
         return message
 
     # =====================================================
+    # =====================================================
+    # UPDATE ASSISTANT MESSAGE VISUAL
+    # =====================================================
+
+    def update_assistant_visual(
+        self,
+        *,
+        user_id: int,
+        message_id: int,
+        visual_data: dict | list[dict],
+    ):
+        message = (
+            self.db.query(ConversationMessageModel)
+            .filter(
+                ConversationMessageModel.message_id == message_id,
+                ConversationMessageModel.user_id == user_id,
+                ConversationMessageModel.role == "assistant",
+            )
+            .first()
+        )
+
+        if message is None:
+            return False
+
+        message.visual_data = visual_data
+        self.db.commit()
+        self.db.refresh(message)
+
+        return True
     # GET RECENT MESSAGES
     # =====================================================
 

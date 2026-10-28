@@ -219,6 +219,50 @@ class DeepSeekService(LLMService):
     # STRUCTURED GENERATION
     # =========================================================
 
+    def _generate_structured_response(
+        self,
+        prompt: str,
+        *,
+        request_context: LLMRequestContext | None = None,
+        system_prompt: str | None = None,
+        temperature: float = 0.0,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        import json
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            response_format={"type": "json_object"},
+            stream=False,
+            temperature=temperature,
+            **kwargs,
+        )
+
+        content = response.choices[0].message.content or "{}"
+
+        # Validate JSON before reporting the provider call as successful.
+        json.loads(content)
+
+        return LLMResponse(
+            content=content,
+            usage=self._extract_usage(response),
+            provider="deepseek",
+            model=self.model,
+            metadata={
+                "request_id": (
+                    request_context.request_id
+                    if request_context is not None
+                    else None
+                ),
+            },
+        )
+
     def generate_structured(
         self,
         prompt: str,
@@ -226,47 +270,16 @@ class DeepSeekService(LLMService):
         request_context: LLMRequestContext | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
-
         import json
 
-        system_prompt = kwargs.pop(
-            "system_prompt",
-            None,
-        )
-
-        messages = []
-
-        if system_prompt:
-            messages.append(
-                {
-                    "role": "system",
-                    "content": system_prompt,
-                }
-            )
-
-        messages.append(
-            {
-                "role": "user",
-                "content": prompt,
-            }
-        )
-
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            response_format={
-                "type": "json_object",
-            },
-            stream=False,
+        response = self._generate_structured_response(
+            prompt,
+            request_context=request_context,
+            system_prompt=kwargs.pop("system_prompt", None),
+            temperature=kwargs.pop("temperature", 0.0),
             **kwargs,
         )
-
-        content = (
-            response.choices[0].message.content
-            or "{}"
-        )
-
-        return json.loads(content)
+        return json.loads(response.content)
 
     # =========================================================
     # USAGE EXTRACTION

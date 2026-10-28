@@ -9,6 +9,7 @@ from brain.retrieval.association_manager import AssociationManager
 from brain.retrieval.association_searcher import AssociationSearcher
 from brain.retrieval.memory_context_selector import MemoryContextSelector
 from brain.retrieval.ranking_config import RankingConfig
+import time
 class HybridRetriever:
 
 
@@ -45,6 +46,8 @@ class HybridRetriever:
     query: str
 ):
 
+    _retrieval_started = time.perf_counter()
+
     # =====================================================
     # KEYWORD SEARCH
     # =====================================================
@@ -60,10 +63,22 @@ class HybridRetriever:
         query
 )
 
-    vector_results = self.repository.search_vector(
-        user_id,
-        query
-)
+    vector_search_from_memories = getattr(
+        self.repository,
+        "search_vector_from_memories",
+        None
+    )
+
+    if callable(vector_search_from_memories):
+        vector_results = vector_search_from_memories(
+            all_memories,
+            query
+        )
+    else:
+        vector_results = self.repository.search_vector(
+            user_id,
+            query
+        )
 
     vector_memories = [
         memory
@@ -286,6 +301,10 @@ class HybridRetriever:
         )
     for result in results:
         result.memory.retrieval_score = result.final_score
+    print(
+        f"RETRIEVAL_TOTAL_MS: "
+        f"{(time.perf_counter() - _retrieval_started) * 1000:.2f}"
+    )
     return [
         result.memory
         for result in results

@@ -1,5 +1,5 @@
 import time
-
+from typing import Optional, Any
 from brain.llm.llm_service import (
     LLMService,
     LLMResponse,
@@ -392,12 +392,111 @@ class TrackedLLMService(LLMService):
         self,
         prompt: str,
         *,
+        request_context: LLMRequestContext | None = None,
         system_prompt: str | None = None,
         temperature: float = 0.0,
+        **kwargs: Any,
     ) -> dict:
+        import json
 
-        return self.provider.generate_structured(
-            prompt,
-            system_prompt=system_prompt,
-            temperature=temperature,
+        start_time = time.perf_counter()
+
+        provider_method = getattr(
+            self.provider,
+            "_generate_structured_response",
+            None,
         )
+
+        try:
+            if callable(provider_method):
+                provider_response = provider_method(
+                    prompt,
+                    request_context=request_context,
+                    system_prompt=system_prompt,
+                    temperature=temperature,
+                    **kwargs,
+                )
+                response = json.loads(provider_response.content)
+            else:
+                response = self.provider.generate_structured(
+                    prompt,
+                    system_prompt=system_prompt,
+                    temperature=temperature,
+                )
+                provider_response = None
+        except Exception as error:
+            latency = time.perf_counter() - start_time
+            if request_context is not None:
+                try:
+                    self.usage_tracker.record(
+                        LLMUsageRecord(
+                            request_id=request_context.request_id,
+                            user_id=request_context.user_id,
+                            provider="unknown",
+                            model="unknown",
+                            brain_tier=request_context.brain_tier,
+                            latency=latency,
+                            success=False,
+                            error=str(error),
+                        )
+                    )
+                except Exception:
+                    pass
+            raise
+
+        latency = time.perf_counter() - start_time
+
+        # Provider execution succeeded; accounting errors must not
+        # reclassify the generation as a provider failure.
+        if request_context is not None:
+            usage = (
+                provider_response.usage
+                if isinstance(provider_response, LLMResponse)
+                else None
+            )
+            provider_name = (
+                (provider_response.provider or "unknown")
+                if isinstance(provider_response, LLMResponse)
+                else "unknown"
+            )
+            model_name = (
+                (provider_response.model or "unknown")
+                if isinstance(provider_response, LLMResponse)
+                else "unknown"
+            )
+
+            try:
+                execution_cost = self._resolve_execution_cost(
+                    request_id=request_context.request_id,
+                    user_id=request_context.user_id,
+                    provider=provider_name,
+                    model=model_name,
+                    input_tokens=usage.input_tokens if usage else None,
+                    output_tokens=usage.output_tokens if usage else None,
+                    cached_tokens=usage.cached_tokens if usage else None,
+                    reasoning_tokens=usage.reasoning_tokens if usage else None,
+                    total_tokens=usage.total_tokens if usage else None,
+                )
+
+                self.usage_tracker.record(
+                    LLMUsageRecord(
+                        request_id=request_context.request_id,
+                        user_id=request_context.user_id,
+                        provider=provider_name,
+                        model=model_name,
+                        brain_tier=request_context.brain_tier,
+                        input_tokens=usage.input_tokens if usage else None,
+                        output_tokens=usage.output_tokens if usage else None,
+                        cached_tokens=usage.cached_tokens if usage else None,
+                        reasoning_tokens=usage.reasoning_tokens if usage else None,
+                        total_tokens=usage.total_tokens if usage else None,
+                        estimated_cost=execution_cost,
+                        latency=latency,
+                        success=True,
+                    )
+                )
+            except Exception:
+                # Keep successful generation successful if accounting fails.
+                pass
+
+        return response

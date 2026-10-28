@@ -30,3 +30,11 @@ tmp/
 .self_development_workspaces/
 .test_orchestrator_workspaces/
 .test_self_development_workspaces/
+# Local backups and patch scripts
+backups/
+*.bak
+*.backup
+*.before*
+*.step12-backup
+patch_*.py
+prepare_*.py

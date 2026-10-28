@@ -56,6 +56,10 @@ class MessageAnalyzer:
             getattr(request, "query", None)
             or ""
         ).strip()
+        fast_result = self._try_fast_path(current_message)
+
+        if fast_result is not None:
+            return fast_result
 
 
         prompt = f"""
@@ -1208,3 +1212,322 @@ Before returning JSON:
             return None
 
         return value
+
+    def _try_fast_path(self, message: str):
+        """
+        IRABRAIN lightweight conversational classifier.
+
+        Supports:
+          - English
+          - Telugu transliteration
+
+        Only classifies explicitly recognized, simple messages.
+         Ambiguous or unsupported messages return None and continue
+        through the existing semantic LLM analyzer.
+
+        Memory retrieval remains ALWAYS-ON.
+        """
+
+        import re
+
+        from brain.memory.message_analysis_result import MessageType
+        from brain.semantic.semantic_analysis_result import (
+        SemanticAnalysisResult,
+    )
+        from decision.intent_result import IntentType
+
+        if not isinstance(message, str) or not message.strip():
+            return None
+
+    # -------------------------------------------------
+    # 1. NORMALIZE
+    # -------------------------------------------------
+
+        normalized = message.casefold().strip()
+
+    # Normalize common apostrophe variants.
+        normalized = (
+            normalized
+            .replace("’", "'")
+            .replace("‘", "'")
+            .replace("`", "'")
+    )
+
+    # Remove harmless punctuation while preserving words.
+        normalized = re.sub(r"[^\w\s']", " ", normalized)
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+
+    # Normalize common English contractions for matching.
+        normalized = re.sub(r"\bwhat's\b", "what is", normalized)
+        normalized = re.sub(r"\bhow's\b", "how is", normalized)
+        normalized = re.sub(r"\bthat's\b", "that is", normalized)
+        normalized = re.sub(r"\bit's\b", "it is", normalized)
+        normalized = re.sub(r"\bthat's\b", "that is", normalized)
+
+        if not normalized:
+            return None
+
+    # -------------------------------------------------
+    # 2. PHRASE CATEGORIES
+    #
+    # Exact normalized matching only.
+    # Do not classify arbitrary sentences by keywords.
+    # -------------------------------------------------
+
+        categories = {
+            "greeting": {
+            "en": {
+                "hi",
+                "hello",
+                "hey",
+                "hey there",
+                "hi there",
+                "hello there",
+                "hi bro",
+                "hello bro",
+                "hey bro",
+                "good morning",
+                "good afternoon",
+                "good evening",
+                "morning",
+                "afternoon",
+                "evening",
+                "how are you",
+                "how are you doing",
+                "how have you been",
+                "what is up",
+                "what is up bro",
+                "how is it going",
+            },
+            "te": {
+                "ela unnav",
+                "ela unnav bro",
+                "ela unnaru",
+                "ela unnaru bro",
+                "bagunnava",
+                "bagunnava bro",
+                "bagunnara",
+                "namaskaram",
+                "namaste",
+                "em chestunnav",
+                "em chestunnav bro",
+            },
+        },
+
+        "farewell": {
+            "en": {
+                "bye",
+                "goodbye",
+                "bye bro",
+                "see you",
+                "see you later",
+                "talk later",
+                "catch you later",
+                "take care",
+                "good night",
+                "have a good day",
+            },
+            "te": {
+                "vellostha",
+                "vellostha bro",
+                "malli kaluddam",
+                "tarvata matladadam",
+                "bye bro vellostha",
+            },
+        },
+
+        "gratitude": {
+            "en": {
+                "thanks",
+                "thank you",
+                "thanks bro",
+                "thank you bro",
+                "thank you so much",
+                "thanks a lot",
+                "many thanks",
+                "really appreciate it",
+            },
+            "te": {
+                "dhanyavadalu",
+                "thanks bro",
+                "chala thanks",
+                "thank you bro",
+            },
+        },
+
+        "apology": {
+            "en": {
+                "sorry",
+                "sorry bro",
+                "my bad",
+                "i am sorry",
+                "my mistake",
+                "please forgive me",
+            },
+            "te": {
+                "sorry bro",
+                "kshaminchu",
+                "nannu kshaminchu",
+                "na tappu",
+            },
+        },
+
+        "acknowledgement": {
+            "en": {
+                "got it",
+                "understood",
+                "i understand",
+                "okay got it",
+                "ok got it",
+                "alright",
+                "all right",
+                "okay thanks",
+                "ok thanks",
+                "okay thank you",
+                "ok thank you",
+            },
+            "te": {
+                "ardham ayyindi",
+                "ardhamayindi",
+                "ardham ayyindi bro",
+                "sare bro",
+                "sare",
+                "alage",
+                "avunu",
+            },
+        },
+
+        "celebration": {
+            "en": {
+                "awesome",
+                "great",
+                "nice",
+                "excellent",
+                "amazing",
+                "fantastic",
+                "wonderful",
+                "perfect",
+                "super",
+                "super bro",
+                "that is great",
+                "that is awesome",
+            },
+            "te": {
+                "super bro",
+                "chala bagundi",
+                "bagundi bro",
+                "adbhutam",
+                "chaala baagundi",
+            },
+        },
+
+        "affirmation": {
+            "en": {
+                "yes",
+                "yes bro",
+                "sure",
+                "sure bro",
+                "absolutely",
+                "definitely",
+                "of course",
+            },
+            "te": {
+                "avunu bro",
+                "kachitanga",
+                "tappakunda",
+            },
+        },
+
+        "negative_acknowledgement": {
+            "en": {
+                "nope",
+                "no",
+                "no bro",
+                "not really",
+            },
+            "te": {
+                "ledu",
+                "ledu bro",
+                "vaddu",
+            },
+        },
+    }
+
+    # -------------------------------------------------
+    # 3. FIND AN EXACT PHRASE MATCH
+    # -------------------------------------------------
+
+        matched_category = None
+        matched_language = None
+
+        for category, languages in categories.items():
+            if normalized in languages["en"]:
+                matched_category = category
+                matched_language = "en"
+                break
+
+            if normalized in languages["te"]:
+                matched_category = category
+                matched_language = "te"
+                break
+
+    # Unknown or potentially context-dependent messages
+    # continue through the existing semantic analyzer.
+        if matched_category is None:
+            return None
+
+    # -------------------------------------------------
+    # 4. CONSERVATIVE SAFETY CHECK
+    #
+    # Generic yes/no/okay responses can imply consent
+    # or depend on previous conversational context.
+    # Do not fast-path them initially.
+    # -------------------------------------------------
+
+        context_sensitive_categories = {
+        "acknowledgement",
+        "affirmation",
+        "negative_acknowledgement",
+    }
+
+        if matched_category in context_sensitive_categories:
+            return None
+
+    # -------------------------------------------------
+    # 5. BUILD A VALID SEMANTIC RESULT
+    # -------------------------------------------------
+
+        is_telugu_transliteration = matched_language == "te"
+
+        if is_telugu_transliteration:
+            response_style = "casual_tenglish"
+            tone = "casual"
+        else:
+            response_style = (
+                "casual_english"
+                if any(word in normalized.split() for word in ("bro",))
+                else "standard"
+            )
+            tone = "casual" if "bro" in normalized.split() else "neutral"
+
+        return SemanticAnalysisResult(
+            message_type=MessageType.CHAT,
+            intent=IntentType.CONVERSATION,
+            intent_confidence=0.99,
+            entities={},
+            requires_reasoning=False,
+            requires_memory=False,
+            requires_tool=False,
+            should_enter_memory_pipeline=False,
+            requires_memory_retrieval=True,
+            language=matched_language,
+            script="latin",
+            is_mixed=False,
+            secondary_language=None,
+            is_transliterated=is_telugu_transliteration,
+            tone=tone,
+            response_style=response_style,
+            requires_llm=True,
+            confidence=0.99,
+            conversation_scores=[],
+    )
