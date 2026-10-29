@@ -1,4 +1,7 @@
-﻿from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+﻿import asyncio
+import inspect
+import json
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 import json
 from services.brain_service import BrainService
@@ -382,37 +385,42 @@ def forget_memory(
 @router.post("/chat/stream")
 async def chat_stream(
     request: BrainChatRequest,
-    background_tasks: BackgroundTasks,
     current_user=Depends(get_current_user),
-    brain_service: BrainService = Depends(get_brain_service),
 ):
     event_queue: asyncio.Queue = asyncio.Queue()
     loop = asyncio.get_running_loop()
     stream_started_at = time.perf_counter()
     first_chunk_logged = False
+
     # Capture plain values before entering the worker thread.
     stream_user_id = current_user.user_id
     stream_user_name = current_user.full_name
 
     def on_visual_callback(payload):
         try:
-            loop.call_soon_threadsafe(event_queue.put_nowait, {"type": "visual", "payload": payload})
+            loop.call_soon_threadsafe(
+                event_queue.put_nowait,
+                {"type": "visual", "payload": payload},
+            )
         except Exception as e:
             print(f"[VISUAL CALLBACK ERROR] {e}")
 
-    def on_state_callback(state): # <-- REAL STATES
+    def on_state_callback(state):
         try:
             print(f"[REAL STATE QUEUE] {state}")
-            loop.call_soon_threadsafe(event_queue.put_nowait, {"type": "state", "payload": state})
+            loop.call_soon_threadsafe(
+                event_queue.put_nowait,
+                {"type": "state", "payload": state},
+            )
         except Exception as e:
             print(f"[STATE CALLBACK ERROR] {e}")
 
     def run_brain_sync():
         worker_db = SessionLocal()
         worker_service = None
+        collected = []
 
         try:
-            # Build the integration inside the worker.
             self_development_gateway = create_self_development_gateway()
             core_integration_service = CoreIntegrationService(
                 signal_handler=self_development_gateway.process,
@@ -438,19 +446,40 @@ async def chat_stream(
             )
 
             for chunk in stream:
+                collected.append(chunk)
                 loop.call_soon_threadsafe(
                     event_queue.put_nowait,
                     {"type": "chunk", "payload": chunk},
                 )
 
             loop.call_soon_threadsafe(
-                event_queue.put_nowait,
-                {"type": "text_complete"},
+                event_queue.put_nowait, {"type": "text_complete"}
             )
             loop.call_soon_threadsafe(
-                event_queue.put_nowait,
-                {"type": "complete"},
+                event_queue.put_nowait, {"type": "complete"}
             )
+
+            # Title is generated with the worker's own open session,
+            # after the browser already received "complete".
+            if (
+                request.conversation_id
+                and request.workspace_mode == "personal"
+                and collected
+            ):
+                try:
+                    title_kwargs = dict(
+                        user_id=stream_user_id,
+                        conversation_id=request.conversation_id,
+                        user_message=request.query,
+                        assistant_response="".join(collected),
+                        llm_service=worker_service.orchestrator.llm_service,
+                    )
+                    if inspect.iscoroutinefunction(generate_conversation_title):
+                        asyncio.run(generate_conversation_title(**title_kwargs))
+                    else:
+                        generate_conversation_title(**title_kwargs)
+                except Exception as exc:
+                    print(f"[TITLE ERROR] {exc}")
 
         except Exception as exc:
             import traceback
@@ -476,11 +505,15 @@ async def chat_stream(
     async def event_generator():
         nonlocal first_chunk_logged
 
-        full_text = []
-
         try:
             while True:
-                event = await event_queue.get()
+                # Heartbeat: keeps proxies from closing the idle connection.
+                try:
+                    event = await asyncio.wait_for(event_queue.get(), timeout=15)
+                except asyncio.TimeoutError:
+                    yield ": keep-alive\n\n"
+                    continue
+
                 event_type = event["type"]
 
                 if event_type == "chunk":
@@ -489,81 +522,51 @@ async def chat_stream(
                         print(
                             "[SSE TIMING] First chunk reached event_generator: "
                             f"{time.perf_counter() - stream_started_at:.3f}s"
-                    )
-
-                    full_text.append(event["payload"])
+                        )
 
                     yield (
                         "event: chunk\n"
                         f"data: {json.dumps({'text': event['payload']})}\n\n"
-                )
+                    )
 
                 elif event_type == "visual":
                     try:
-                        visual_json = json.dumps({
-                            "visual": event["payload"]
-                        })
-
-                        yield (
-                            "event: visual\n"
-                            f"data: {visual_json}\n\n"
-                    )
-
+                        visual_json = json.dumps({"visual": event["payload"]})
+                        yield f"event: visual\ndata: {visual_json}\n\n"
                     except (TypeError, ValueError) as exc:
                         print(
                             "[SSE VISUAL SERIALIZATION ERROR] "
                             f"{type(exc).__name__}: {exc}"
-                    )
+                        )
 
                 elif event_type == "state":
                     try:
-                        state_json = json.dumps({
-                            "state": event["payload"]
-                        })
-
-                        yield (
-                            "event: state\n"
-                            f"data: {state_json}\n\n"
-                    )
-
+                        state_json = json.dumps({"state": event["payload"]})
+                        yield f"event: state\ndata: {state_json}\n\n"
                     except (TypeError, ValueError) as exc:
                         print(
                             "[SSE STATE SERIALIZATION ERROR] "
                             f"{type(exc).__name__}: {exc}"
-                    )
+                        )
 
                 elif event_type == "text_complete":
                     yield (
                         "event: text_complete\n"
                         'data: {"success": true}\n\n'
-                )
-
-                    if (
-                        request.conversation_id
-                        and request.workspace_mode == "personal"
-                        and full_text
-                ):
-                        background_tasks.add_task(
-                            generate_conversation_title,
-                            user_id=stream_user_id,
-                            conversation_id=request.conversation_id,
-                            user_message=request.query,
-                            assistant_response="".join(full_text),
-                            llm_service=brain_service.orchestrator.llm_service,
                     )
 
                 elif event_type == "complete":
                     yield (
                         "event: complete\n"
                         'data: {"success": true}\n\n'
-                )
+                    )
                     break
 
                 elif event_type == "error":
                     yield (
                         "event: error\n"
                         f"data: {json.dumps({'message': event['payload']})}\n\n"
-                )
+                    )
                     break
 
         except asyncio.CancelledError:
@@ -571,18 +574,28 @@ async def chat_stream(
             raise
 
         except Exception as exc:
+            import traceback
+
             print(
                 "[SSE EVENT GENERATOR ERROR] "
                 f"{type(exc).__name__}: {exc}"
-        )
-            import traceback
+            )
             traceback.print_exc()
 
-        # Do not report success when the stream failed.
             try:
                 yield (
                     "event: error\n"
                     f"data: {json.dumps({'message': 'The response stream failed.'})}\n\n"
-            )
+                )
             except Exception:
                 pass
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
