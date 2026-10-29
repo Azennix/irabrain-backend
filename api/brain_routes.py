@@ -390,6 +390,9 @@ async def chat_stream(
     loop = asyncio.get_running_loop()
     stream_started_at = time.perf_counter()
     first_chunk_logged = False
+    # Capture plain values before entering the worker thread.
+    stream_user_id = current_user.user_id
+    stream_user_name = current_user.full_name
 
     def on_visual_callback(payload):
         try:
@@ -422,11 +425,11 @@ async def chat_stream(
             )
 
             stream = worker_service.chat_stream(
-                user_id=current_user.user_id,
+                user_id=stream_user_id,
                 query=request.query,
                 conversation_id=request.conversation_id,
                 project_id=request.project_id,
-                user_name=current_user.full_name,
+                user_name=stream_user_name,
                 attachments=request.attachments,
                 workspace_mode=request.workspace_mode,
                 session_id=request.session_id,
