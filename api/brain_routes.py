@@ -428,56 +428,112 @@ async def chat_stream(
 
     async def event_generator():
         full_text = []
-        while True:
-            event = await event_queue.get()
 
-            if event["type"] == "chunk":
+        try:
+            while True:
+                event = await event_queue.get()
+                event_type = event["type"]
 
-
-                if not first_chunk_logged:
-                    first_chunk_logged = True
-
-                    print(
-                         "[SSE TIMING] First chunk reached event_generator: "
-                          f"{time.perf_counter() - stream_started_at:.3f}s"
-    )
-                full_text.append(event["payload"])
-                yield f"event: chunk\ndata: {json.dumps({'text': event['payload']})}\n\n"
-
-            elif event["type"] == "visual":
-                print(f"[SSE PARALLEL] Visual event sent")
-                yield f"event: visual\ndata: {json.dumps({'visual': event['payload']})}\n\n"
-
-            elif event["type"] == "state": # <-- REAL PIPELINE STATE
-                print(f"[SSE REAL STATE] {event['payload']}")
-                yield f"event: state\ndata: {json.dumps({'state': event['payload']})}\n\n"
-
-            elif event["type"] == "text_complete":
-                yield f"event: text_complete\ndata: {{\"success\": true}}\n\n"
-                if request.conversation_id and request.workspace_mode == "personal" and full_text:
-                    background_tasks.add_task(
-                        generate_conversation_title,
-                        user_id=current_user.user_id,
-                        conversation_id=request.conversation_id,
-                        user_message=request.query,
-                        assistant_response="".join(full_text),
-                        llm_service=brain_service.orchestrator.llm_service,
+                if event_type == "chunk":
+                    if not first_chunk_logged:
+                        first_chunk_logged = True
+                        print(
+                            "[SSE TIMING] First chunk reached event_generator: "
+                            f"{time.perf_counter() - stream_started_at:.3f}s"
                     )
 
-            elif event["type"] == "complete":
-                yield f"event: complete\ndata: {{\"success\": true}}\n\n"
-                break
+                    full_text.append(event["payload"])
 
-            elif event["type"] == "error":
-                yield f"event: error\ndata: {json.dumps({'message': event['payload']})}\n\n"
-                break
+                    yield (
+                        "event: chunk\n"
+                        f"data: {json.dumps({'text': event['payload']})}\n\n"
+                )
 
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            "Connection": "keep-alive",
-        },
-    )
+                elif event_type == "visual":
+                    try:
+                        visual_json = json.dumps({
+                            "visual": event["payload"]
+                        })
+
+                        yield (
+                            "event: visual\n"
+                            f"data: {visual_json}\n\n"
+                    )
+
+                    except (TypeError, ValueError) as exc:
+                        print(
+                            "[SSE VISUAL SERIALIZATION ERROR] "
+                            f"{type(exc).__name__}: {exc}"
+                    )
+
+                elif event_type == "state":
+                    try:
+                        state_json = json.dumps({
+                            "state": event["payload"]
+                        })
+
+                        yield (
+                            "event: state\n"
+                            f"data: {state_json}\n\n"
+                    )
+
+                    except (TypeError, ValueError) as exc:
+                        print(
+                            "[SSE STATE SERIALIZATION ERROR] "
+                            f"{type(exc).__name__}: {exc}"
+                    )
+
+                elif event_type == "text_complete":
+                    yield (
+                        "event: text_complete\n"
+                        'data: {"success": true}\n\n'
+                )
+
+                    if (
+                        request.conversation_id
+                        and request.workspace_mode == "personal"
+                        and full_text
+                ):
+                        background_tasks.add_task(
+                            generate_conversation_title,
+                            user_id=current_user.user_id,
+                            conversation_id=request.conversation_id,
+                            user_message=request.query,
+                            assistant_response="".join(full_text),
+                            llm_service=brain_service.orchestrator.llm_service,
+                    )
+
+                elif event_type == "complete":
+                    yield (
+                        "event: complete\n"
+                        'data: {"success": true}\n\n'
+                )
+                    break
+
+                elif event_type == "error":
+                    yield (
+                        "event: error\n"
+                        f"data: {json.dumps({'message': event['payload']})}\n\n"
+                )
+                    break
+
+        except asyncio.CancelledError:
+            print("[SSE] Client disconnected.")
+            raise
+
+        except Exception as exc:
+            print(
+                "[SSE EVENT GENERATOR ERROR] "
+                f"{type(exc).__name__}: {exc}"
+        )
+            import traceback
+            traceback.print_exc()
+
+        # Do not report success when the stream failed.
+            try:
+                yield (
+                    "event: error\n"
+                    f"data: {json.dumps({'message': 'The response stream failed.'})}\n\n"
+            )
+            except Exception:
+                pass
