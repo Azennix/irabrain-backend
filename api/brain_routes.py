@@ -24,7 +24,13 @@ from brain.tier.capability_policy import CapabilityPolicy
 from brain.tier.capability_requirement import CapabilityRequirement
 from brain.tier.entitlement.service import TierEntitlementService
 from brain.tier.models import BrainTier
-
+from database.database import SessionLocal
+from brain.self_development.integration.core_integration_service import (
+    CoreIntegrationService,
+)
+from brain.self_development.integration.self_development_factory import (
+    create_self_development_gateway,
+)
 
 import asyncio
 import json
@@ -399,8 +405,23 @@ async def chat_stream(
             print(f"[STATE CALLBACK ERROR] {e}")
 
     def run_brain_sync():
+        worker_db = SessionLocal()
+        worker_service = None
+
         try:
-            stream = brain_service.chat_stream(
+            # Build the integration inside the worker.
+            self_development_gateway = create_self_development_gateway()
+            core_integration_service = CoreIntegrationService(
+                signal_handler=self_development_gateway.process,
+            )
+
+            # The worker owns its own SQLAlchemy session.
+            worker_service = BrainService(
+                db=worker_db,
+                core_integration_service=core_integration_service,
+            )
+
+            stream = worker_service.chat_stream(
                 user_id=current_user.user_id,
                 query=request.query,
                 conversation_id=request.conversation_id,
@@ -410,24 +431,48 @@ async def chat_stream(
                 workspace_mode=request.workspace_mode,
                 session_id=request.session_id,
                 on_visual=on_visual_callback,
-                on_state=on_state_callback, # <-- PASS REAL STATES
+                on_state=on_state_callback,
             )
+
             for chunk in stream:
-                loop.call_soon_threadsafe(event_queue.put_nowait, {"type": "chunk", "payload": chunk})
+                loop.call_soon_threadsafe(
+                    event_queue.put_nowait,
+                    {"type": "chunk", "payload": chunk},
+                )
 
-            loop.call_soon_threadsafe( event_queue.put_nowait, {"type": "text_complete"}, )
+            loop.call_soon_threadsafe(
+                event_queue.put_nowait,
+                {"type": "text_complete"},
+            )
+            loop.call_soon_threadsafe(
+                event_queue.put_nowait,
+                {"type": "complete"},
+            )
 
-            loop.call_soon_threadsafe(event_queue.put_nowait, {"type": "complete"})
-        except Exception as e:
-            print(f"[BRAIN THREAD ERROR] {e}")
+        except Exception as exc:
             import traceback
+
+            print(f"[BRAIN THREAD ERROR] {exc}")
             traceback.print_exc()
-            loop.call_soon_threadsafe(event_queue.put_nowait, {"type": "error", "payload": str(e)})
+            loop.call_soon_threadsafe(
+                event_queue.put_nowait,
+                {"type": "error", "payload": str(exc)},
+            )
+
+        finally:
+            try:
+                if worker_service is not None:
+                    worker_service.close()
+            except Exception as exc:
+                print(f"[BRAIN SERVICE CLOSE ERROR] {exc}")
+            finally:
+                worker_db.close()
 
     executor_future = loop.run_in_executor(stream_executor, run_brain_sync)
 
     async def event_generator():
         nonlocal first_chunk_logged
+
         full_text = []
 
         try:
