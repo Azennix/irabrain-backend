@@ -65,6 +65,7 @@ class LLMService(ABC):
         self,
         prompt: str,
         *,
+        request_context: LLMRequestContext | None = None,
         system_prompt: str | None = None,
         temperature: float = 0.0,
     ) -> dict[str, Any]:

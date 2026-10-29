@@ -420,89 +420,341 @@ RIGHT: columns=["Developer POV","User POV"], values=["Parse intent, constraints,
             )
             return None
 
+
     def generate_visuals(
         self,
         *,
         user_message: str,
         assistant_response: str,
-        request_context: LLMRequestContext,
+         request_context: LLMRequestContext,
     ) -> list[dict] | None:
 
         prompt = f"""
-Create 2-4 DIFFERENT visual POVs for the answer.
+    You are IRABRAIN's Visual Intelligence Engine.
 
-USER QUESTION:
-{user_message}
+    Your responsibility is to decide whether the current conversation
+    benefits from a visual representation and, if so, create the single
+    most useful visual for the user's intent.
 
-ASSISTANT ANSWER:
-{assistant_response[:3000]}
+    Do not generate visuals merely because you can.
+    Think about what would help the user understand, decide, build,
+    debug, compare, or execute something.
 
-TASK: Based on user POV, generate multiple visuals.
+    USER MESSAGE:
+    {user_message}
 
-COLOR RULES - CRITICAL FOR POWER FEEL:
-For EACH node, add "color" field based on situation:
+    IRABRAIN RESPONSE:
+    {assistant_response[:4000]}
 
-- DANGER / WARNING / RISK / FAILURE / ERROR / CRITICAL / BLOCKED / ATTACK / BUG / VULNERABILITY / CRASH:
-  "color": "bg-[#000000] border-[#8A0303]/70 text-[#EEE3D1]"  -> BLOOD RED border, black bg
+==================================================
+1. INTELLIGENT VISUAL DECISION
+==================================================
 
-- DECISION / BRANCH / APPROVAL / HUMAN-LOOP / GATE / REVIEW / CHECKPOINT:
-  "color": "bg-[#171614] border-[#EEE3D1]/40 text-[#EEE3D1]"  -> BRIGHT EEE3D1 border
+First understand the user's intent, the complexity of the subject,
+the structure of the answer, and whether a visual would provide
+meaningful value beyond the text.
 
-- NORMAL / SUCCESS / PROCESS / STEP / DEFAULT:
-  "color": "bg-[#171614] border-[#EEE3D1]/25 text-[#EEE3D1]"  -> NORMAL
+Possible decisions:
 
-- START / GOAL / TRIGGER / INPUT:
-  "color": "bg-[#000000] border-[#8A0303]/50 text-[#EEE3D1]"  -> Slight blood red for power
+- No visual: a visual would add little value.
+- Process visualization: the user needs to understand a sequence,
+  workflow, algorithm, or execution process.
+- System visualization: the user needs to understand architecture,
+  components, integrations, dependencies, or data flow.
+- Concept visualization: the user needs to understand relationships
+  between concepts, entities, or ideas.
+- Comparative visualization: the user needs to compare alternatives.
+- Hierarchical visualization: the user needs to understand levels,
+  ownership, decomposition, or parent-child relationships.
+- Temporal visualization: the user needs to understand events or
+  stages over time.
+- Quantitative visualization: the answer contains sufficient
+  supported numerical data to justify a chart.
 
-Examples:
-  {{"id":"1","label":"User Input","color":"bg-[#000000] border-[#8A0303]/50 text-[#EEE3D1]"}}
-  {{"id":"2","label":"Validate Request","description":"Check auth","color":"bg-[#171614] border-[#EEE3D1]/25 text-[#EEE3D1]"}}
-  {{"id":"3","label":"Risk Detected!","description":"SQL Injection","color":"bg-[#000000] border-[#8A0303]/70 text-[#EEE3D1]"}}
-  {{"id":"4","label":"Human Approval Needed","color":"bg-[#171614] border-[#EEE3D1]/40 text-[#EEE3D1]"}}
+These are reasoning possibilities, not mandatory categories.
 
-VISUAL TYPES:
-- flowchart: process or sequence
-- concept_map: connected concepts
-- steps: ordered explanation
-- comparison: differences
-- hierarchy: parent-child
-- cycle: loop
-- timeline: events
+Use your judgment. Do not follow keyword-based rules.
+A short question may deserve a visual, and a long answer may not.
 
-Return JSON ARRAY ONLY:
-[
-  {{"type":"flowchart","title":"Overall Flow","nodes":[{{"id":"1","label":"Goal","color":"bg-[#000000] border-[#8A0303]/50 text-[#EEE3D1]"}}],"edges":[{{"from":"1","to":"2"}}]}},
-  {{"type":"concept_map","title":"Developer POV - Roles","nodes":[{{"id":"p1","label":"Planner","color":"bg-[#171614] border-[#EEE3D1]/25 text-[#EEE3D1]"}}],"edges":[{{"from":"p1","to":"r1"}}]}}
-]
+Do not create a visual just to decorate the response.
+Do not invent information absent from the user's message or answer.
+Do not create a diagram if the relationships cannot be represented
+accurately from the available information.
 
-Allowed types: flowchart, concept_map, steps, comparison, hierarchy, cycle, timeline, system_architecture
-If no visual needed, return [{{"type":"none"}}]
+==================================================
+2. ONE COHERENT VISUAL
+==================================================
+
+Return AT MOST ONE visual object.
+
+If the subject is complex, represent its complexity INSIDE that
+single visual using multiple connected nodes, edges, meaningful
+groups, and clear relationships.
+
+Examples of good decisions:
+
+- A greeting: no visual.
+- A simple definition: usually no visual.
+- A programming algorithm: one flowchart when useful.
+- An MVP: one coherent architecture or workflow diagram.
+- A connected AI system: one system architecture with components
+  and relationships.
+- A comparison: one comparison visual.
+- A multi-stage process: one flowchart or steps visual.
+- A complex topic with several subcomponents: one integrated diagram,
+  not separate diagrams for each perspective.
+
+Never produce multiple visual cards, developer/user POV variants,
+or alternative diagrams for the same answer.
+
+The goal is one useful visual, not the maximum number of visuals.
+
+==================================================
+3. SELECT THE BEST REPRESENTATION
+==================================================
+
+Choose the single best type for the actual task.
+
+Allowed types:
+- flowchart
+- concept_map
+- steps
+- comparison
+- hierarchy
+- cycle
+- timeline
+- system_architecture
+- connection_graph
+- decision_tree
+- data_chart
+
+Use the type that best expresses the relationships in the answer.
+Do not choose a type merely because it appears in this list.
+
+==================================================
+4. NODE AND EDGE QUALITY
+==================================================
+
+When a visual is appropriate:
+
+- Give it a concise, descriptive title.
+- Use meaningful, specific node labels.
+- Represent relationships accurately.
+- Give every node a unique ID.
+- Use edges that reference existing node IDs.
+- Keep labels concise and readable.
+- Include enough nodes to explain the subject without unnecessary
+  complexity.
+- Use connected nodes where relationships matter.
+- Avoid disconnected decorative nodes.
+- Avoid duplicate nodes and redundant edges.
+- Include descriptions only when they improve understanding.
+- Do not invent components, execution stages, metrics, or outcomes.
+- Preserve important dependencies and decision branches.
+
+For a software architecture, represent actual components and their
+interactions, such as frontend, API, services, database, and external
+integrations, but include only those supported by the answer.
+
+For an algorithm or workflow, represent the real sequence and
+decision branches.
+
+For a comparison, ensure the compared dimensions are consistent.
+
+For a data chart, use only numerical values supported by the answer.
+
+==================================================
+5. VISUAL DESIGN SYSTEM
+==================================================
+
+Follow IRABRAIN's visual palette:
+
+- Background: #000000
+- Primary text: #EEE3D1
+- Dark node background: #171614
+- Blood-red accent: #8A0303
+
+Every node must include a "color" field.
+
+Use these styles according to meaning:
+
+Normal process, information, or success:
+"bg-[#171614] border-[#EEE3D1]/25 text-[#EEE3D1]"
+
+Decision, review, approval, or human checkpoint:
+"bg-[#171614] border-[#EEE3D1]/40 text-[#EEE3D1]"
+
+Input, starting point, or goal:
+"bg-[#000000] border-[#8A0303]/50 text-[#EEE3D1]"
+
+Danger, failure, risk, or critical issue:
+"bg-[#000000] border-[#8A0303]/70 text-[#EEE3D1]"
+
+Use blood red sparingly and only where semantically appropriate.
+Do not color ordinary nodes as dangerous just for visual impact.
+
+==================================================
+6. OUTPUT CONTRACT
+==================================================
+
+Return valid JSON only. Do not use Markdown fences.
+
+When no visual is useful, return exactly:
+{{"type": "none"}}
+
+When a visual is useful, return one JSON object with this structure:
+
+{{
+  "type": "flowchart",
+  "title": "Request Processing Workflow",
+  "description": "How the request moves through the system",
+  "nodes": [
+    {{
+      "id": "input",
+      "label": "User Request",
+      "description": "Incoming request",
+      "color": "bg-[#000000] border-[#8A0303]/50 text-[#EEE3D1]"
+    }},
+    {{
+      "id": "process",
+      "label": "Process Request",
+      "description": "Validate and execute",
+      "color": "bg-[#171614] border-[#EEE3D1]/25 text-[#EEE3D1]"
+    }}
+  ],
+  "edges": [
+    {{
+      "from": "input",
+      "to": "process"
+    }}
+  ]
+}}
+
+The example illustrates the schema only. Generate content relevant
+to the actual user message and answer.
+
+Do not return an array of different visual perspectives.
+Do not return multiple visual objects.
 """
 
         try:
             visuals = self.llm_service.generate_structured(
                 prompt,
-                temperature=0.2,
-            )
+                request_context=request_context,
+                temperature=0.0,
+        )
+
             if isinstance(visuals, dict) and "visuals" in visuals:
                 visuals = visuals["visuals"]
-            if isinstance(visuals, dict):
-                visuals = [visuals]
-            if not isinstance(visuals, list):
+
+        # Support providers that return a one-item list despite
+        # being instructed to return a single object.
+            if isinstance(visuals, list):
+                if len(visuals) != 1:
+                    print(
+                    "[VISUAL INTELLIGENCE] Expected one visual; "
+                    f"received {len(visuals)}."
+                )
+                    return None
+
+                visuals = visuals[0]
+
+            if not isinstance(visuals, dict):
                 return None
 
-            cleaned = []
-            for v in visuals:
-                if not isinstance(v, dict): continue
-                if v.get("type") == "none": continue
-                if v.get("type") not in {"concept_map","flowchart","comparison","steps","hierarchy","cycle","timeline","system_architecture","connection_graph","decision_tree","data_chart"}:
+            if visuals.get("type") == "none":
+                return None
+
+            allowed_types = {
+            "concept_map",
+            "flowchart",
+            "comparison",
+            "steps",
+            "hierarchy",
+            "cycle",
+            "timeline",
+            "system_architecture",
+            "connection_graph",
+            "decision_tree",
+            "data_chart",
+            }
+
+            if visuals.get("type") not in allowed_types:
+                return None
+
+            title = visuals.get("title")
+
+            if not isinstance(title, str) or not title.strip():
+                return None
+
+            nodes = visuals.get("nodes")
+            edges = visuals.get("edges")
+
+            if not isinstance(nodes, list) or not nodes:
+                return None
+
+            if not isinstance(edges, list):
+                return None
+
+        # Validate node IDs and remove malformed output rather than
+        # passing invalid graph data to the renderer.
+            valid_nodes = []
+            node_ids = set()
+
+            for node in nodes:
+                if not isinstance(node, dict):
                     continue
-                if not isinstance(v.get("title"), str): continue
-                v["title"] = v["title"][:200]
-                cleaned.append(v)
 
-            return cleaned[:4] if cleaned else None
+                node_id = node.get("id")
+                label = node.get("label")
+                color = node.get("color")
 
-        except Exception as e:
-            print("[VISUAL MULTI] failed:", e)
+                if not isinstance(node_id, str) or not node_id.strip():
+                    continue
+
+                if node_id in node_ids:
+                    continue
+
+                if not isinstance(label, str) or not label.strip():
+                    continue
+
+                if not isinstance(color, str):
+                    continue
+
+                node_ids.add(node_id)
+                valid_nodes.append(node)
+
+            if not valid_nodes:
+                return None
+
+            valid_edges = []
+
+            for edge in edges:
+                if not isinstance(edge, dict):
+                    continue
+
+                source = edge.get("from")
+                target = edge.get("to")
+
+                if (
+                    isinstance(source, str)
+                    and isinstance(target, str)
+                    and source in node_ids
+                    and target in node_ids
+                    and source != target
+            ):
+                    valid_edges.append(edge)
+
+            visuals["title"] = title.strip()[:200]
+            visuals["nodes"] = valid_nodes
+            visuals["edges"] = valid_edges
+
+        # A single visual object may contain many nodes and edges.
+            return [visuals]
+
+        except Exception as error:
+            print(
+               "[VISUAL INTELLIGENCE] Generation failed:",
+                 str(error),
+        )
             return None

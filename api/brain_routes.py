@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+﻿from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 import json
 from services.brain_service import BrainService
@@ -415,14 +415,14 @@ async def chat_stream(
             for chunk in stream:
                 loop.call_soon_threadsafe(event_queue.put_nowait, {"type": "chunk", "payload": chunk})
 
-            loop.call_soon_threadsafe(event_queue.put_nowait, {"type": "text_complete"})
+            loop.call_soon_threadsafe( event_queue.put_nowait, {"type": "text_complete"}, )
+
+            loop.call_soon_threadsafe(event_queue.put_nowait, {"type": "complete"})
         except Exception as e:
             print(f"[BRAIN THREAD ERROR] {e}")
             import traceback
             traceback.print_exc()
             loop.call_soon_threadsafe(event_queue.put_nowait, {"type": "error", "payload": str(e)})
-        finally:
-            loop.call_soon_threadsafe(event_queue.put_nowait, {"type": "complete"})
 
     executor_future = loop.run_in_executor(stream_executor, run_brain_sync)
 
