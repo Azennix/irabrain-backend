@@ -545,7 +545,7 @@ async def chat_stream(
                 ):
                         background_tasks.add_task(
                             generate_conversation_title,
-                            user_id=current_user.user_id,
+                            user_id=stream_user_id,
                             conversation_id=request.conversation_id,
                             user_message=request.query,
                             assistant_response="".join(full_text),
