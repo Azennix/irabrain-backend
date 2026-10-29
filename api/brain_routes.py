@@ -427,6 +427,7 @@ async def chat_stream(
     executor_future = loop.run_in_executor(stream_executor, run_brain_sync)
 
     async def event_generator():
+        nonlocal first_chunk_logged
         full_text = []
 
         try:
