@@ -19,6 +19,8 @@ class BrainUsageSettlementService:
 
         if wallet_operations is None:
             raise ValueError("Wallet operations are required.")
+        if included_capacity_service is None:
+            raise ValueError("Included capacity service is required.")
 
         if settlement_repository is None:
             raise ValueError("Settlement repository is required.")
@@ -128,30 +130,44 @@ class BrainUsageSettlementService:
             )
 
         # Unified wallet:
-        # Every billable chat consumes from the same wallet.
-        self._wallet_operations.consume(
+                # Consume included Brain capacity first.
+        included_units = self._included_capacity_service.consume(
             user_id=context.user_id,
-            units=units,
-            reference_id=context.request_id,
-            metadata={
-                "calculation_version": result.calculation_version,
-                "basis": result.basis,
-                "provider": context.provider,
-                "model": context.model,
-                "included_brain_consumed": "0",
-            },
+            tier=context.brain_tier,
+            requested_units=units,
         )
 
-        # All usage is wallet-funded; there is no separate free pool.
+        if included_units < Decimal("0") or included_units > units:
+            raise ValueError(
+                "Invalid included Brain capacity consumption."
+            )
+
+        # Charge only the remaining usage to the paid wallet.
+        paid_units = units - included_units
+
+        if paid_units > Decimal("0"):
+            self._wallet_operations.consume(
+                user_id=context.user_id,
+                units=paid_units,
+                reference_id=context.request_id,
+                metadata={
+                    "calculation_version": result.calculation_version,
+                    "basis": result.basis,
+                    "provider": context.provider,
+                    "model": context.model,
+                    "included_brain_consumed": str(included_units),
+                },
+            )
+
+        # Record the complete usage settlement.
         self._settlement_repository.create(
             request_id=context.request_id,
             user_id=context.user_id,
             total_units=units,
-            free_units=Decimal("0"),
-            paid_units=units,
+            free_units=included_units,
+            paid_units=paid_units,
             calculation_version=result.calculation_version,
             basis=result.basis,
             status="completed",
         )
-
         return result

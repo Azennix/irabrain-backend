@@ -1,5 +1,5 @@
 from typing import Any
-
+import time
 from brain.memory.message_analysis_result import (
     MessageAnalysisResult,
     MessageType,
@@ -41,6 +41,7 @@ class MessageAnalyzer:
     def __init__(self, llm_service):
 
         self.llm_service = llm_service
+        
 
     # =====================================================
     # MAIN ANALYSIS
@@ -52,6 +53,8 @@ class MessageAnalyzer:
         conversation_history
     ) ->  SemanticAnalysisResult:
 
+        analysis_started = time.perf_counter()
+
         current_message = (
             getattr(request, "query", None)
             or ""
@@ -59,6 +62,11 @@ class MessageAnalyzer:
         fast_result = self._try_fast_path(current_message)
 
         if fast_result is not None:
+            elapsed = time.perf_counter() - analysis_started
+            print(
+                  f"[LATENCY] MessageAnalyzer FAST PATH: "
+                  f"{elapsed:.3f}s | Message: {current_message!r}"
+    )
             return fast_result
 
 
@@ -800,23 +808,18 @@ Before returning JSON:
 
 """
 
-
+        
 
         result = self.llm_service.generate_structured(
             prompt=prompt,
             temperature=0.0
         )
-
+        
 
 
         return self._normalize_result(
             result
         )
-
-
-
-
-
 
 
     # =====================================================
