@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from brain.recharge.wallet.repository import BrainWalletRepository
 from brain.recharge.entitlement.service import FreeBrainEntitlementService
+from brain.recharge.config import DEV_BRAIN_RECHARGE_CONFIG
 
 
 class BrainBalanceService:
@@ -28,10 +29,15 @@ class BrainBalanceService:
 
         # Refresh the existing Free Brain entitlement.
         # The entitlement service applies a reset when it is due.
-        entitlement = self._free_brain_service.get_current(
+        free_cfg = DEV_BRAIN_RECHARGE_CONFIG.free_brain
+
+        entitlement = self._free_brain_service.get_or_create(
             user_id=user_id,
+            allowance=free_cfg.allowance,
+            reset_interval_hours=free_cfg.reset_interval_hours,
             now=now,
         )
+        self._free_brain_service.commit()
 
         included_balance = Decimal("0")
 

@@ -209,3 +209,6 @@ class FreeBrainEntitlementService:
         self._repository.update(reset_entitlement)
 
         return reset_entitlement
+
+    def commit(self):
+        self._repository.commit()
