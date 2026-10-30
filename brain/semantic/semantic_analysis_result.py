@@ -75,6 +75,13 @@ class SemanticAnalysisResult:
     requires_llm: bool = True
 
     # =================================================
+    # VISUAL
+    # =================================================
+
+    needs_visual: bool = False
+    visual_type_hint: Optional[str] = None
+
+    # =================================================
     # CONFIDENCE
     # =================================================
 

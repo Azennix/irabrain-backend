@@ -697,6 +697,34 @@ Examples:
 The analyzer MUST NOT output a memory-retrieval decision.
 
 ==================================================
+15B. VISUAL
+==================================================
+
+needs_visual:
+TRUE only when a diagram, graph or chart would help the user
+understand the ANSWER better than text alone.
+FALSE for greetings, thanks, casual chat, personal statements,
+simple facts, opinions, short answers and plain advice.
+
+visual_type_hint:
+When needs_visual is true, choose the type that fits the
+QUESTION. Do not default to flowchart.
+
+- flowchart: a step-by-step process or algorithm
+- system_architecture: components, layers, services, data flow
+- connection_graph: relationships between many entities
+- concept_map: one central idea with related parts
+- hierarchy: levels, org structure, parent-child
+- decision_tree: choices with branching outcomes
+- comparison: two or more options against criteria
+- timeline: events over time
+- cycle: a repeating loop
+- data_chart: numbers or statistics explicitly asked for
+- steps: a simple ordered how-to
+
+When needs_visual is false, visual_type_hint is null.
+
+==================================================
 16. OUTPUT
 ==================================================
 
@@ -722,6 +750,8 @@ entities
 requires_reasoning
 requires_memory
 requires_tool
+needs_visual
+visual_type_hint
 
 Types:
 
@@ -736,9 +766,14 @@ boolean
 requires_llm:
 boolean
 
+needs_visual:
+boolean
+
+visual_type_hint:
+one allowed visual type string, or null
+
 language:
 one allowed language code
-
 script:
 one allowed script
 
@@ -938,6 +973,11 @@ Before returning JSON:
             requires_llm=bool(
                 result.get("requires_llm", True)
     ),
+            needs_visual=bool(result.get("needs_visual", False)),
+
+            visual_type_hint=self._normalize_visual_hint(
+                result.get("visual_type_hint")
+            ),
 
             confidence=self._safe_float(
                 result.get("confidence", 0.7)
@@ -1212,6 +1252,16 @@ Before returning JSON:
             return None
 
         return value
+
+    @staticmethod
+    def _normalize_visual_hint(value):
+        allowed = {
+            "flowchart", "system_architecture", "connection_graph",
+            "concept_map", "hierarchy", "decision_tree", "comparison",
+            "timeline", "cycle", "data_chart", "steps",
+        }
+        value = str(value or "").strip().lower()
+        return value if value in allowed else None
 
     def _try_fast_path(self, message: str):
         """

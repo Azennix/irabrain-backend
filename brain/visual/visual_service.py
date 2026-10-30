@@ -29,83 +29,61 @@ class VisualIntelligenceService:
         visuals = self.generate_multi(query, response, context)
         return visuals[0] if visuals else None
 
-    def generate_multi(
-        self,
-        query: str,
-        response: str,
-        context,
-    ) -> list[dict[str, Any]]:
-        """
-        Return zero or one visual object.
+    NODE_TYPES = {
+        "flowchart", "concept_map", "system_architecture",
+        "connection_graph", "hierarchy", "decision_tree", "cycle",
+    }
 
-        A single visual may contain multiple connected nodes and edges.
-        """
+    @classmethod
+    def _is_renderable(cls, v: dict) -> bool:
+        t = v.get("type")
+        if t in cls.NODE_TYPES:
+            return isinstance(v.get("nodes"), list) and bool(v["nodes"]) \
+                and isinstance(v.get("edges"), list)
+        if t == "comparison":
+            return bool(v.get("columns")) and bool(v.get("comparisons"))
+        if t == "timeline":
+            return bool(v.get("timeline"))
+        if t == "steps":
+            return bool(v.get("steps"))
+        if t == "data_chart":
+            c = v.get("chart")
+            return isinstance(c, dict) and bool(c.get("labels")) and bool(c.get("series"))
+        return False
+
+    def generate_multi(self, query, response, context, visual_type_hint=None):
         if not self.should_generate(query):
             return []
-
         try:
-            generator = getattr(
-                self.chat_engine,
-                "generate_visuals",
-                None,
-            )
-
+            generator = getattr(self.chat_engine, "generate_visuals", None)
             if not callable(generator):
-                print(
-                    "[VISUAL] No generate_visuals method is available; "
-                    "skipping visual generation."
-                )
                 return []
 
             result = generator(
                 user_message=query,
                 assistant_response=response,
                 request_context=context,
+                visual_type_hint=visual_type_hint,
             )
 
             if result is None:
                 return []
-
-            # Support the expected single-object contract and legacy
-            # one-item lists without allowing multiple visual cards.
-            if isinstance(result, dict):
-                visual = result
-            elif isinstance(result, list):
+            if isinstance(result, list):
                 if len(result) != 1:
-                    print(
-                        "[VISUAL WARNING] Expected zero or one visual; "
-                        f"received {len(result)}. Discarding result."
-                    )
                     return []
-
-                visual = result[0]
-            else:
-                print("[VISUAL WARNING] Invalid visual result type.")
+                result = result[0]
+            if not isinstance(result, dict):
+                return []
+            if result.get("type") in (None, "none"):
+                return []
+            if not isinstance(result.get("title"), str):
+                return []
+            if not self._is_renderable(result):
+                print(f"[VISUAL] Discarded non-renderable '{result.get('type')}' visual.")
                 return []
 
-            if not isinstance(visual, dict):
-                return []
-
-            if visual.get("type") in (None, "none"):
-                return []
-
-            if not isinstance(visual.get("title"), str):
-                return []
-
-            nodes = visual.get("nodes")
-            edges = visual.get("edges")
-
-            if not isinstance(nodes, list) or not nodes:
-                return []
-
-            if not isinstance(edges, list):
-                return []
-
-            # Do not alter the generated graph. The chat engine is
-            # responsible for validating node IDs and edge references.
             print("[VISUAL] Generated one visual object.")
-            return [visual]
-
+            return [result]
         except Exception as exc:
             print(f"[VISUAL SERVICE ERROR] {exc}")
             return []

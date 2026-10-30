@@ -110,6 +110,8 @@ class FreeBrainEntitlementRepository:
         self._session.flush()
 
         return entitlement
-       
+    
     def commit(self):
-        self._session.commit()
+        self._session.commit()        # CORRECT
+       
+  

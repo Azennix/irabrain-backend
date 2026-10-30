@@ -426,8 +426,12 @@ RIGHT: columns=["Developer POV","User POV"], values=["Parse intent, constraints,
         *,
         user_message: str,
         assistant_response: str,
-         request_context: LLMRequestContext,
+        request_context: LLMRequestContext,
+        visual_type_hint: str | None = None,
     ) -> list[dict] | None:
+
+        preferred = visual_type_hint or "choose the best fit" 
+
 
         prompt = f"""
     You are IRABRAIN's Visual Intelligence Engine.
@@ -513,7 +517,12 @@ The goal is one useful visual, not the maximum number of visuals.
 3. SELECT THE BEST REPRESENTATION
 ==================================================
 
-Choose the single best type for the actual task.
+PREFERRED TYPE: {preferred}
+
+Use the preferred type unless the answer clearly cannot be
+represented that way. Use flowchart ONLY for sequential
+processes. Do not fall back to flowchart for comparisons,
+architectures, relationships, trends or numbers.
 
 Allowed types:
 - flowchart
@@ -630,6 +639,13 @@ When a visual is useful, return one JSON object with this structure:
   ]
 }}
 
+PREFERRED TYPE: {preferred}
+
+Use the preferred type unless the answer clearly cannot be
+represented that way. Use flowchart ONLY for sequential
+processes. Do not fall back to flowchart for comparisons,
+architectures, relationships, trends or numbers.
+
 The example illustrates the schema only. Generate content relevant
 to the actual user message and answer.
 
@@ -679,77 +695,81 @@ Do not return multiple visual objects.
             "data_chart",
             }
 
-            if visuals.get("type") not in allowed_types:
+            vtype = visuals.get("type")
+            if vtype not in allowed_types:
                 return None
 
             title = visuals.get("title")
-
             if not isinstance(title, str) or not title.strip():
                 return None
-
-            nodes = visuals.get("nodes")
-            edges = visuals.get("edges")
-
-            if not isinstance(nodes, list) or not nodes:
-                return None
-
-            if not isinstance(edges, list):
-                return None
-
-        # Validate node IDs and remove malformed output rather than
-        # passing invalid graph data to the renderer.
-            valid_nodes = []
-            node_ids = set()
-
-            for node in nodes:
-                if not isinstance(node, dict):
-                    continue
-
-                node_id = node.get("id")
-                label = node.get("label")
-                color = node.get("color")
-
-                if not isinstance(node_id, str) or not node_id.strip():
-                    continue
-
-                if node_id in node_ids:
-                    continue
-
-                if not isinstance(label, str) or not label.strip():
-                    continue
-
-                if not isinstance(color, str):
-                    continue
-
-                node_ids.add(node_id)
-                valid_nodes.append(node)
-
-            if not valid_nodes:
-                return None
-
-            valid_edges = []
-
-            for edge in edges:
-                if not isinstance(edge, dict):
-                    continue
-
-                source = edge.get("from")
-                target = edge.get("to")
-
-                if (
-                    isinstance(source, str)
-                    and isinstance(target, str)
-                    and source in node_ids
-                    and target in node_ids
-                    and source != target
-            ):
-                    valid_edges.append(edge)
-
             visuals["title"] = title.strip()[:200]
-            visuals["nodes"] = valid_nodes
-            visuals["edges"] = valid_edges
 
-        # A single visual object may contain many nodes and edges.
+            node_types = {
+                "flowchart", "concept_map", "system_architecture",
+                "connection_graph", "hierarchy", "decision_tree", "cycle",
+            }
+
+            if vtype in node_types:
+                nodes = visuals.get("nodes")
+                edges = visuals.get("edges", [])
+                if not isinstance(nodes, list) or not nodes:
+                    return None
+                if not isinstance(edges, list):
+                    edges = []
+
+                valid_nodes, node_ids = [], set()
+                for node in nodes:
+                    if not isinstance(node, dict):
+                        continue
+                    nid, label = node.get("id"), node.get("label")
+                    if not isinstance(nid, str) or not nid.strip() or nid in node_ids:
+                        continue
+                    if not isinstance(label, str) or not label.strip():
+                        continue
+                    if not isinstance(node.get("color"), str):
+                        node["color"] = "bg-[#171614] border-[#EEE3D1]/25 text-[#EEE3D1]"
+                    node_ids.add(nid)
+                    valid_nodes.append(node)
+                if not valid_nodes:
+                    return None
+
+                visuals["nodes"] = valid_nodes
+                visuals["edges"] = [
+                    e for e in edges
+                    if isinstance(e, dict)
+                    and e.get("from") in node_ids
+                    and e.get("to") in node_ids
+                    and e.get("from") != e.get("to")
+                ]
+
+            elif vtype == "comparison":
+                cols, comps = visuals.get("columns"), visuals.get("comparisons")
+                if not isinstance(cols, list) or not isinstance(comps, list) or not cols or not comps:
+                    return None
+
+            elif vtype == "timeline":
+                if not isinstance(visuals.get("timeline"), list) or not visuals["timeline"]:
+                    return None
+
+            elif vtype == "steps":
+                if not isinstance(visuals.get("steps"), list) or not visuals["steps"]:
+                    return None
+
+            elif vtype == "data_chart":
+                chart = visuals.get("chart")
+                if not isinstance(chart, dict):
+                    return None
+                labels, series = chart.get("labels"), chart.get("series")
+                if not isinstance(labels, list) or not isinstance(series, list) or not labels or not series:
+                    return None
+                for s in series:
+                    vals = s.get("values") if isinstance(s, dict) else None
+                    if (not isinstance(vals, list) or len(vals) != len(labels)
+                            or any(not isinstance(x, (int, float)) or isinstance(x, bool) for x in vals)):
+                        return None
+                if chart.get("kind") not in ("bar", "line", "pie"):
+                    chart["kind"] = "bar"
+
             return [visuals]
 
         except Exception as error:
