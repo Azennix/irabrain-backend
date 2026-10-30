@@ -900,9 +900,6 @@ class BrainOrchestrator:
         intent = self.message_analyzer.to_intent_result(
             semantic_result
 )
-        needs_visual = semantic_result.needs_visual            # <-- NEW
-        visual_type_hint = semantic_result.visual_type_hint    # <-- NEW
-
 
         print("Intent and message analyzer:", intent)
         print("========================================")
@@ -1549,7 +1546,7 @@ class BrainOrchestrator:
         )
 
         # Visual generation runs after the complete assistant response exists.
-     
+        emit("visualizing")
 
         print("[INFO] Starting ChatEngine stream...")
 
@@ -1633,14 +1630,12 @@ class BrainOrchestrator:
         # =================================================
         # 19A. GENERATE AND PERSIST VISUALS
         # =================================================
-        if on_visual is not None and needs_visual and full_response.strip():
+        if on_visual is not None and full_response.strip():
             try:
-                emit("visualizing")
                 visual_payloads = visual_service.generate_multi(
                     request.query,
                     full_response,
                     request_context,
-                    visual_type_hint=visual_type_hint, 
                 )
 
                 if visual_payloads:
