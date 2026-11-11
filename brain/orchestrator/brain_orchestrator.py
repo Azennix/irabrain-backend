@@ -177,6 +177,10 @@ from brain.llm.llm_telemetry_signal_evaluator import (
 from brain.llm.usage_record_handler import (
     LLMUsageRecordHandler,
 )
+from brain.chat.response_blocks import (
+    build_response_payload,
+    make_visual_block,
+)
 
 
 class BrainOrchestrator:
@@ -1563,6 +1567,11 @@ class BrainOrchestrator:
             yield chunk
 
         full_response = "".join(full_response_parts)
+        response_payload = build_response_payload(
+            text=full_response
+)
+
+        response_blocks = response_payload["response_blocks"]
         print("\n[OK] ChatEngine stream completed")
         print(f"Response length: {len(full_response)}")
         print("====================================")
@@ -1608,6 +1617,7 @@ class BrainOrchestrator:
                     content=full_response,
                     conversation_id=request.conversation_id,
                     visual_data=None,  # Save with None first, don't block
+                    response_blocks=response_blocks,
                 )
             )
 
@@ -1644,23 +1654,51 @@ class BrainOrchestrator:
                         and request.conversation_id
                         and saved_assistant_message is not None
                     ):
-                        persisted = self.conversation_service.update_assistant_visual(
-                            user_id=request.user_id,
-                            message_id=saved_assistant_message.message_id,
-                            visual_data=visual_payloads,
+                        visual_block = make_visual_block(
+                            visual_payloads[0]
                         )
-                        if not persisted:
-                            print(
-                                "[VISUAL WARNING] Visual payloads generated, "
-                                "but the assistant message was not updated."
+
+                        if visual_block:
+                            ordered_blocks = [
+                                *response_blocks["blocks"],
+                                visual_block,
+                            ]
+
+                            updated_payload = build_response_payload(
+                                blocks=ordered_blocks
                             )
 
+                            persisted = (
+                                self.conversation_service.update_assistant_response(
+                                    user_id=request.user_id,
+                                    message_id=saved_assistant_message.message_id,
+                                    content=updated_payload["content"],
+                                    response_blocks=updated_payload["response_blocks"],
+                                    visual_data=updated_payload["visual_data"],
+                                )
+                            )
+
+                            if not persisted:
+                                print(
+                                    "[VISUAL WARNING] Visual generated, "
+                                    "but response block persistence failed."
+                                )
+                            else:
+                                self.conversation_service.commit()
+                                print("[VISUAL] Response blocks committed successfully.")
+
+
                     on_visual(visual_payloads)
+
                     print(
                         f"[VISUAL] Emitted {len(visual_payloads)} visual payload(s)"
                     )
+
+
             except Exception as exc:
-                print(f"[VISUAL ERROR] Generation or persistence failed: {exc}")
+                print(
+                    f"[VISUAL ERROR] Generation or persistence failed: {exc}"
+                )
 
         print("              BRAIN STREAM COMPLETE")
         print("=" * 70)
@@ -1697,7 +1735,9 @@ class BrainOrchestrator:
             {
                 "id": message.message_id,
                 "role": message.role,
-                "content": message.content
+                "content": message.content,
+                "visual_data": message.visual_data,
+                "response_blocks": message.response_blocks,
             }
             for message in messages
         ]

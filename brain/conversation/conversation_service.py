@@ -131,14 +131,16 @@ class ConversationService:
         user_id: int,
         content: str,
         conversation_id: str | None = None,
-        visual_data: dict | list[dict] | None = None
+        visual_data: dict | list[dict] | None = None,
+        response_blocks: dict | None = None
     ):
         return self.repository.save(
             user_id=user_id,
             role="assistant",
             content=content,
             conversation_id=conversation_id,
-            visual_data=visual_data
+            visual_data=visual_data,
+            response_blocks=response_blocks
         )
 
     # =====================================================
@@ -158,6 +160,22 @@ class ConversationService:
             message_id=message_id,
             visual_data=visual_data,
         )
+    def update_assistant_response(
+        self,
+        *,
+        user_id: int,
+        message_id: int,
+        content: str,
+        response_blocks: dict,
+        visual_data: dict | list[dict] | None = None
+):
+        return self.repository.update_assistant_response(
+            user_id=user_id,
+            message_id=message_id,
+            content=content,
+            response_blocks=response_blocks,
+            visual_data=visual_data
+    )
     # RECENT CONVERSATION
     # =====================================================
 

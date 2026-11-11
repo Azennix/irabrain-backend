@@ -187,7 +187,8 @@ class ConversationRepository:
         content: str,
         conversation_id: str | None = None,
         visual_data: dict | list[dict] | None = None,
-        attachments: list[dict] | None = None
+        attachments: list[dict] | None = None,
+        response_blocks: dict | None = None
     ):
         # Verify ownership before attaching a message
         # to an existing conversation.
@@ -210,12 +211,12 @@ class ConversationRepository:
             role=role,
             content=content,
             visual_data=visual_data,
-            attachments=attachments or None
+            attachments=attachments or None,
+            response_blocks=response_blocks
         )
 
         self.db.add(message)
-        self.db.commit()
-        self.db.refresh(message)
+        self.db.flush()
 
         return message
 
@@ -245,10 +246,42 @@ class ConversationRepository:
             return False
 
         message.visual_data = visual_data
-        self.db.commit()
-        self.db.refresh(message)
+        self.db.flush()
 
         return True
+
+    def update_assistant_response(
+        self,
+         *,
+        user_id: int,
+        message_id: int,
+        content: str,
+        response_blocks: dict,
+        visual_data: dict | list[dict] | None = None
+):
+        message = (
+            self.db.query(ConversationMessageModel)
+            .filter(
+                ConversationMessageModel.message_id == message_id,
+                ConversationMessageModel.user_id == user_id,
+                ConversationMessageModel.role == "assistant"
+        )
+        .first()
+    )
+
+        if message is None:
+            return False
+
+        message.content = content
+        message.response_blocks = response_blocks
+
+        if visual_data is not None:
+            message.visual_data = visual_data
+
+        self.db.flush()
+
+        return True
+
     # GET RECENT MESSAGES
     # =====================================================
 
@@ -276,7 +309,8 @@ class ConversationRepository:
         return (
             query
             .order_by(
-                ConversationMessageModel.created_at.desc()
+                ConversationMessageModel.created_at.desc(),
+                ConversationMessageModel.message_id.desc()
             )
             .limit(limit)
             .all()

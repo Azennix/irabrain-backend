@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, DateTime, JSON
 from database.database import Base
 
@@ -13,4 +13,5 @@ class ConversationMessageModel(Base):
     content = Column(Text, nullable=False)
     visual_data = Column(JSON, nullable=True)
     attachments = Column(JSON, nullable=True)
+    response_blocks = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

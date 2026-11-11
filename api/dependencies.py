@@ -115,6 +115,8 @@ def get_brain_balance_service(
     return BrainBalanceService(
         wallet_repository=BrainWalletRepository(db),
         free_brain_service=free_brain_service,
+        user_repository=UserRepository(db),
+        tier_capacity_repository=TierBrainCapacityRepository(db),
     )
 
 

@@ -1,4 +1,5 @@
-﻿import asyncio
+import asyncio
+from decimal import Decimal
 import inspect
 import json
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -65,6 +66,39 @@ def _entitlement_error_response(error: TierEntitlementError) -> dict:
     }
 
     return {"detail": detail}
+
+MINIMUM_REQUIRED_BRAIN_UNITS = Decimal("5")
+
+
+def _require_minimum_brain_balance(
+    user_id: int,
+    balance_service: BrainBalanceService,
+) -> None:
+
+    balance = balance_service.get_balance(user_id)
+
+    available_balance = Decimal(
+        str(balance["total_balance"])
+    )
+
+    if available_balance < MINIMUM_REQUIRED_BRAIN_UNITS:
+
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "code": "INSUFFICIENT_BRAIN_UNITS",
+                "message": (
+                    "You need at least 5 Brain Units "
+                    "to start a new request."
+                ),
+                "available_balance": str(available_balance),
+                "minimum_required_units": "5",
+                "next_reset_at": balance.get("next_reset_at"),
+                "reset_interval_hours": balance.get(
+                    "reset_interval_hours"
+                ),
+            },
+        )
 # =====================================================
 # CONVERSATIONS
 # =====================================================
@@ -204,8 +238,16 @@ def chat(
     current_user=Depends(get_current_user),
     brain_service: BrainService = Depends(
         get_brain_service
-    )
+    ),
+    balance_service: BrainBalanceService = Depends(
+        get_brain_balance_service
+    ),
+
 ):
+    _require_minimum_brain_balance(
+        user_id=current_user.user_id,
+        balance_service=balance_service,
+    )
     try:
 
         response = brain_service.chat(
@@ -272,13 +314,14 @@ def get_conversation_history(
                 "role": message.role,
                 "content": message.content,
                 "visual_data": getattr(message, "visual_data", None),
+                "response_blocks": getattr(
+                    message, "response_blocks", None
+                ),
                 "attachments": getattr(message, "attachments", None) or [],
             }
             for message in messages
         ]
     }
-
-
 
 # =====================================================
 # MEMORY
@@ -386,7 +429,14 @@ def forget_memory(
 async def chat_stream(
     request: BrainChatRequest,
     current_user=Depends(get_current_user),
+    balance_service: BrainBalanceService = Depends(
+        get_brain_balance_service
+    ),
 ):
+    _require_minimum_brain_balance(
+        user_id=current_user.user_id,
+        balance_service=balance_service,
+    )
     event_queue: asyncio.Queue = asyncio.Queue()
     loop = asyncio.get_running_loop()
     stream_started_at = time.perf_counter()

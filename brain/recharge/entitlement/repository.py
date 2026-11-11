@@ -62,7 +62,9 @@ class FreeBrainEntitlementRepository:
             consumed=entitlement.consumed,
             reset_interval_hours=entitlement.reset_interval_hours,
             period_started_at=self._ensure_utc(entitlement.period_started_at),
-            next_reset_at=entitlement.next_reset_at,
+            next_reset_at=self._ensure_utc(
+            entitlement.next_reset_at
+),
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
@@ -101,10 +103,13 @@ class FreeBrainEntitlementRepository:
         model.reset_interval_hours = (
             entitlement.reset_interval_hours
         )
-        model.period_started_at = (
+        model.period_started_at = self._ensure_utc(
             entitlement.period_started_at
-        )
-        model.next_reset_at = entitlement.next_reset_at
+)
+
+        model.next_reset_at = self._ensure_utc(
+            entitlement.next_reset_at
+)
         model.updated_at = datetime.now(timezone.utc)
 
         self._session.flush()

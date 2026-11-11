@@ -1,4 +1,4 @@
-﻿from brain.engine.engine import Engine
+from brain.engine.engine import Engine
 from brain.llm.chat_prompt_builder import ChatPromptBuilder
 from brain.chat.response_validator import ResponseValidator
 from brain.chat.confidence_controller import ConfidenceController
@@ -528,8 +528,34 @@ Allowed types:
 - decision_tree
 - data_chart
 
+
+NEW:
+- mind_map
+- blueprint
+- business_model_canvas
+
+VISUAL SELECTION RULES:
+
+- mind_map:
+  Use for brainstorming, learning topics, ideas,
+  related concepts and knowledge exploration.
+
+- blueprint:
+  Use for product designs, engineering systems,
+  technical specifications and implementation plans.
+
+- business_model_canvas:
+  Use for startup strategy, business planning,
+  customer segments, value propositions and revenue models.
+
+Do not use flowcharts as the default representation.
+Select the visual that best communicates the actual subject.
+
+Do not force a visual when it adds little value.
+
 Use the type that best expresses the relationships in the answer.
 Do not choose a type merely because it appears in this list.
+
 
 ==================================================
 4. NODE AND EDGE QUALITY
@@ -630,6 +656,92 @@ When a visual is useful, return one JSON object with this structure:
   ]
 }}
 
+
+ADDITIONAL OUTPUT SCHEMAS:
+
+1. MIND MAP
+
+{{
+  "type": "mind_map",
+  "title": "Topic Mind Map",
+  "description": "Related ideas and concepts",
+  "centerNodeId": "central",
+  "nodes": [
+    {{
+      "id": "central",
+      "label": "Main Topic",
+      "description": "Central concept",
+      "color": "bg-[#000000] border-[#8A0303]/50 text-[#EEE3D1]"
+    }},
+    {{
+      "id": "branch_1",
+      "label": "Related Concept",
+      "description": "Supporting idea",
+      "color": "bg-[#171614] border-[#EEE3D1]/25 text-[#EEE3D1]"
+    }}
+  ],
+  "edges": [
+    {{
+      "from": "central",
+      "to": "branch_1",
+      "label": "includes"
+    }}
+  ]
+}}
+
+2. BLUEPRINT
+
+{{
+  "type": "blueprint",
+  "title": "Product Blueprint",
+  "description": "Technical design",
+  "nodes": [
+    {{
+      "id": "frontend",
+      "label": "Frontend",
+      "description": "User interface",
+      "group": "Presentation",
+      "layer": "Client",
+      "color": "bg-[#171614] border-[#EEE3D1]/25 text-[#EEE3D1]"
+    }}
+  ],
+  "edges": [],
+  "metadata": {{
+    "layout": "blueprint",
+    "complexity": "medium",
+    "source": "answer"
+  }}
+}}
+
+3. BUSINESS MODEL CANVAS
+
+{{
+  "type": "business_model_canvas",
+  "title": "Business Model Canvas",
+  "description": "Business strategy overview",
+  "canvas": {{
+    "key_partners": ["Partners"],
+    "key_activities": ["Activities"],
+    "key_resources": ["Resources"],
+    "value_propositions": ["Value proposition"],
+    "customer_relationships": ["Relationships"],
+    "channels": ["Channels"],
+    "customer_segments": ["Customers"],
+    "cost_structure": ["Costs"],
+    "revenue_streams": ["Revenue"]
+  }}
+}}
+
+RULES:
+
+- Use mind_map for connected ideas, not sequential workflows.
+- Use blueprint for technical/product design, not ordinary processes.
+- Use business_model_canvas for actual business-model analysis.
+- Only include information supported by the user's question
+  and assistant answer.
+- Never invent business figures, costs or revenue.
+- Keep every visual concise and readable.
+
 The example illustrates the schema only. Generate content relevant
 to the actual user message and answer.
 
@@ -677,6 +789,13 @@ Do not return multiple visual objects.
             "connection_graph",
             "decision_tree",
             "data_chart",
+
+             # Stage 1: New visual types
+            "mind_map",
+            "blueprint",
+            "business_model_canvas",
+
+
             }
 
             if visuals.get("type") not in allowed_types:
@@ -685,6 +804,232 @@ Do not return multiple visual objects.
             title = visuals.get("title")
 
             if not isinstance(title, str) or not title.strip():
+                return None
+
+            # Business Model Canvas uses a different schema.
+            if visuals.get("type") == "business_model_canvas":
+                canvas = visuals.get("canvas")
+
+                required_sections = {
+        "key_partners",
+        "key_activities",
+        "key_resources",
+        "value_propositions",
+        "customer_relationships",
+        "channels",
+        "customer_segments",
+        "cost_structure",
+        "revenue_streams",
+    }
+
+                if not isinstance(canvas, dict):
+                    return None
+
+                if not required_sections.issubset(canvas.keys()):
+                    return None
+
+                if any(
+                    not isinstance(canvas[key], list)
+                    or any(not isinstance(item, str) for item in canvas[key])
+                    for key in required_sections
+    ):
+                    return None
+
+                visuals["canvas"] = {
+                    key: canvas[key][:8]
+                    for key in required_sections
+    }
+
+                visuals["title"] = title.strip()[:200]
+
+                print("[VISUAL] Validated Business Model Canvas.")
+                return [visuals]
+
+            # =====================================================
+            # TYPE-SPECIFIC VISUAL VALIDATION
+            # =====================================================
+
+            visual_type = visuals.get("type")
+            visuals["title"] = title.strip()[:200]
+
+            if "description" in visuals:
+                if not isinstance(visuals["description"], str):
+                    visuals.pop("description", None)
+                else:
+                    visuals["description"] = visuals["description"][:500]
+
+            # -----------------------------------------------------
+            # BUSINESS MODEL CANVAS
+            # -----------------------------------------------------
+
+            if visual_type == "business_model_canvas":
+                canvas = visuals.get("canvas")
+
+                required_sections = {
+                    "key_partners",
+                    "key_activities",
+                    "key_resources",
+                    "value_propositions",
+                    "customer_relationships",
+                    "channels",
+                    "customer_segments",
+                    "cost_structure",
+                    "revenue_streams",
+                }
+
+                if not isinstance(canvas, dict):
+                    return None
+
+                if not required_sections.issubset(canvas):
+                    return None
+
+                clean_canvas = {}
+
+                for section in required_sections:
+                    items = canvas[section]
+
+                    if (
+                        not isinstance(items, list)
+                        or any(not isinstance(item, str) for item in items)
+                    ):
+                        return None
+
+                    clean_canvas[section] = [
+                        item.strip()[:300]
+                        for item in items[:8]
+                        if item.strip()
+                    ]
+
+                visuals["canvas"] = clean_canvas
+                print("[VISUAL] Validated Business Model Canvas.")
+                return [visuals]
+
+            # -----------------------------------------------------
+            # COMPARISON
+            # -----------------------------------------------------
+
+            if visual_type == "comparison":
+                columns = visuals.get("columns")
+                comparisons = visuals.get("comparisons")
+
+                if (
+                    not isinstance(columns, list)
+                    or len(columns) < 2
+                    or not all(isinstance(c, str) for c in columns)
+                    or not isinstance(comparisons, list)
+                    or not comparisons
+                ):
+                    return None
+
+                for row in comparisons:
+                    if (
+                        not isinstance(row, dict)
+                        or not isinstance(row.get("label"), str)
+                        or not isinstance(row.get("values"), list)
+                        or len(row["values"]) != len(columns)
+                        or not all(isinstance(v, str) for v in row["values"])
+                    ):
+                        return None
+
+                return [visuals]
+
+            # -----------------------------------------------------
+            # STEPS
+            # -----------------------------------------------------
+
+            if visual_type == "steps":
+                steps = visuals.get("steps")
+
+                if (
+                    not isinstance(steps, list)
+                    or not steps
+                    or any(
+                        not isinstance(step, dict)
+                        or not isinstance(step.get("title"), str)
+                        or not step["title"].strip()
+                        for step in steps
+                    )
+                ):
+                    return None
+
+                return [visuals]
+
+            # -----------------------------------------------------
+            # TIMELINE
+            # -----------------------------------------------------
+
+            if visual_type == "timeline":
+                timeline = visuals.get("timeline")
+
+                if (
+                    not isinstance(timeline, list)
+                    or not timeline
+                    or any(
+                        not isinstance(event, dict)
+                        or not isinstance(event.get("title"), str)
+                        or not event["title"].strip()
+                        for event in timeline
+                    )
+                ):
+                    return None
+
+                return [visuals]
+
+            # -----------------------------------------------------
+            # DATA CHART
+            # -----------------------------------------------------
+
+            if visual_type == "data_chart":
+                chart = visuals.get("chart")
+
+                if not isinstance(chart, dict):
+                    return None
+
+                labels = chart.get("labels")
+                series = chart.get("series")
+
+                if (
+                    not isinstance(labels, list)
+                    or not labels
+                    or not all(isinstance(label, str) for label in labels)
+                    or not isinstance(series, list)
+                    or not series
+                ):
+                    return None
+
+                for item in series:
+                    if (
+                        not isinstance(item, dict)
+                        or not isinstance(item.get("name"), str)
+                        or not isinstance(item.get("values"), list)
+                        or len(item["values"]) != len(labels)
+                        or any(
+                            not isinstance(value, (int, float))
+                            or isinstance(value, bool)
+                            for value in item["values"]
+                        )
+                    ):
+                        return None
+
+                return [visuals]
+
+            # -----------------------------------------------------
+            # GRAPH-BASED VISUAL TYPES
+            # -----------------------------------------------------
+
+            graph_types = {
+                "flowchart",
+                "concept_map",
+                "system_architecture",
+                "connection_graph",
+                "hierarchy",
+                "decision_tree",
+                "cycle",
+                "mind_map",
+                "blueprint",
+            }
+
+            if visual_type not in graph_types:
                 return None
 
             nodes = visuals.get("nodes")
@@ -696,60 +1041,70 @@ Do not return multiple visual objects.
             if not isinstance(edges, list):
                 return None
 
-        # Validate node IDs and remove malformed output rather than
-        # passing invalid graph data to the renderer.
             valid_nodes = []
             node_ids = set()
 
             for node in nodes:
                 if not isinstance(node, dict):
-                    continue
+                    return None
 
                 node_id = node.get("id")
                 label = node.get("label")
                 color = node.get("color")
 
-                if not isinstance(node_id, str) or not node_id.strip():
-                    continue
-
-                if node_id in node_ids:
-                    continue
-
-                if not isinstance(label, str) or not label.strip():
-                    continue
-
-                if not isinstance(color, str):
-                    continue
+                if (
+                    not isinstance(node_id, str)
+                    or not node_id.strip()
+                    or node_id in node_ids
+                    or not isinstance(label, str)
+                    or not label.strip()
+                    or not isinstance(color, str)
+                ):
+                    return None
 
                 node_ids.add(node_id)
                 valid_nodes.append(node)
-
-            if not valid_nodes:
-                return None
 
             valid_edges = []
 
             for edge in edges:
                 if not isinstance(edge, dict):
-                    continue
+                    return None
 
                 source = edge.get("from")
                 target = edge.get("to")
 
                 if (
-                    isinstance(source, str)
-                    and isinstance(target, str)
-                    and source in node_ids
-                    and target in node_ids
-                    and source != target
-            ):
-                    valid_edges.append(edge)
+                    not isinstance(source, str)
+                    or not isinstance(target, str)
+                    or source not in node_ids
+                    or target not in node_ids
+                    or source == target
+                ):
+                    return None
 
-            visuals["title"] = title.strip()[:200]
+                valid_edges.append(edge)
+
+            # Mind map central node validation
+            if visual_type == "mind_map":
+                center_id = visuals.get("centerNodeId")
+
+                if center_id is not None and center_id not in node_ids:
+                    return None
+
+            # Hierarchy parent validation
+            if visual_type == "hierarchy":
+                for node in valid_nodes:
+                    parent_id = node.get("parentId")
+
+                    if parent_id is not None and parent_id not in node_ids:
+                        return None
+
             visuals["nodes"] = valid_nodes
             visuals["edges"] = valid_edges
 
-        # A single visual object may contain many nodes and edges.
+            print(f"[VISUAL] Validated {visual_type} visual.")
+
             return [visuals]
 
         except Exception as error:
